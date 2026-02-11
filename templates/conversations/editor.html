@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Conv #{{ conversation.elevenlabs_id|truncatechars:10 }}{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+        <a href="{% url 'annotator_dashboard' %}" class="text-indigo-600 hover:text-indigo-800 text-sm">&larr; Back</a>
+        <h1 class="text-xl font-bold text-gray-900">Conv #{{ conversation.elevenlabs_id|truncatechars:16 }}</h1>
+        <span class="text-gray-500 text-sm">({{ conversation.agent.label }})</span>
+        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+            {% if conversation.status == 'assigned' %}bg-blue-100 text-blue-800
+            {% elif conversation.status == 'in_progress' %}bg-yellow-100 text-yellow-800
+            {% elif conversation.status == 'completed' %}bg-green-100 text-green-800
+            {% elif conversation.status == 'approved' %}bg-emerald-100 text-emerald-800
+            {% elif conversation.status == 'flagged' %}bg-red-100 text-red-800
+            {% else %}bg-gray-100 text-gray-800{% endif %}">
+            {{ conversation.get_status_display }}
+        </span>
+    </div>
+    <div class="text-sm text-gray-500">
+        {% if conversation.call_duration_secs %}Duration: {{ conversation.call_duration_secs }}s{% endif %}
+    </div>
+</div>
+
+{% if conversation.has_audio %}
+<div class="bg-white rounded-lg shadow-sm border p-4 mb-4">
+    <h3 class="text-sm font-medium text-gray-700 mb-2">Audio Player</h3>
+    <audio controls class="w-full">
+        <source src="#" type="audio/mpeg">
+        Your browser does not support audio.
+    </audio>
+</div>
+{% endif %}
+
+<div class="space-y-0">
+    {% for turn in turns %}
+    <div id="turn-{{ turn.pk }}">
+        {% include "conversations/partials/turn_display.html" with turn=turn conversation=conversation %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="bg-white rounded-lg shadow-sm border p-4 mt-6">
+    <label class="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+    <div class="flex items-start space-x-2">
+        <textarea name="annotator_notes" rows="3"
+            class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            hx-post="{% url 'conversation_notes' conversation.pk %}"
+            hx-trigger="change"
+            hx-target="#notes-status"
+            hx-swap="innerHTML">{{ conversation.annotator_notes }}</textarea>
+        <span id="notes-status" class="text-sm text-gray-400 pt-2"></span>
+    </div>
+</div>
+
+{% if conversation.reviewer_notes %}
+<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-4">
+    <h3 class="text-sm font-medium text-yellow-800 mb-1">Reviewer Notes</h3>
+    <p class="text-sm text-yellow-700">{{ conversation.reviewer_notes }}</p>
+</div>
+{% endif %}
+
+{% if conversation.status in 'assigned,in_progress' %}
+<div class="flex items-center space-x-3 mt-6">
+    <form method="post" action="{% url 'conversation_flag' conversation.pk %}" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="px-4 py-2 bg-red-50 text-red-700 text-sm rounded border border-red-200 hover:bg-red-100">
+            Flag for Review
+        </button>
+    </form>
+    <form method="post" action="{% url 'conversation_complete' conversation.pk %}" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700">
+            Mark as Completed
+        </button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,28 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('', views.admin_dashboard, name='admin_dashboard'),
+    path('agents/', views.agent_list, name='agent_list'),
+    path('agents/add/', views.agent_add, name='agent_add'),
+    path('agents/<int:pk>/edit/', views.agent_edit, name='agent_edit'),
+    path('agents/<int:pk>/delete/', views.agent_delete, name='agent_delete'),
+    path('agents/<int:pk>/sync/', views.agent_sync, name='agent_sync'),
+    path('assign/', views.assign_conversations, name='assign_conversations'),
+    path('assign/auto/', views.auto_distribute, name='auto_distribute'),
+    path('review/', views.review_queue, name='review_queue'),
+    path('review/<int:pk>/', views.review_conversation, name='review_conversation'),
+    path('review/<int:pk>/approve/', views.approve_conversation, name='approve_conversation'),
+    path('review/<int:pk>/reject/', views.reject_conversation, name='reject_conversation'),
+    path('export/', views.export_page, name='export_page'),
+    path('export/preview/', views.export_preview, name='export_preview'),
+    path('export/download/', views.export_download, name='export_download'),
+    path('analytics/', views.analytics_page, name='analytics_page'),
+    path('team/', views.team_management, name='team_management'),
+    path('team/invite/', views.team_invite, name='team_invite'),
+    path('team/<int:pk>/toggle/', views.team_toggle_active, name='team_toggle_active'),
+    path('prompts/', views.prompt_management, name='prompt_management'),
+    path('prompts/add/', views.prompt_add, name='prompt_add'),
+    path('prompts/<int:pk>/edit/', views.prompt_edit, name='prompt_edit'),
+    path('prompts/<int:pk>/activate/', views.prompt_activate, name='prompt_activate'),
+]

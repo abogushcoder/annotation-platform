@@ -1,0 +1,33 @@
+{% load conversation_tags %}
+<div class="flex {% if turn.role == 'agent' %}justify-end{% else %}justify-start{% endif %} py-2">
+    <div class="max-w-[75%] {% if turn.role == 'agent' %}bg-blue-50 border-blue-200{% else %}bg-gray-50 border-gray-200{% endif %} border rounded-lg p-3">
+        <div class="flex items-center justify-between mb-1">
+            <span class="text-xs font-medium {% if turn.role == 'agent' %}text-blue-700{% else %}text-gray-700{% endif %}">
+                {% if turn.role == 'agent' %}Restaurant AI{% else %}Customer{% endif %}
+            </span>
+            <span class="text-xs text-gray-400">
+                {% if turn.time_in_call_secs %}{{ turn.time_in_call_secs|floatformat:1 }}s{% endif %}
+            </span>
+        </div>
+        <p class="text-sm text-gray-900">{{ turn.display_text }}</p>
+        {% if turn.is_edited %}
+        <div class="mt-1 text-xs text-green-600">Edited</div>
+        {% endif %}
+
+        <div class="mt-2 flex items-center justify-end space-x-2">
+            {% if conversation.status in 'assigned,in_progress' %}
+            <button hx-get="{% url 'turn_edit' conversation.pk turn.pk %}"
+                    hx-target="#turn-{{ turn.pk }}"
+                    hx-swap="innerHTML"
+                    class="text-xs text-indigo-600 hover:text-indigo-800">Edit</button>
+            {% endif %}
+            {% if turn.is_edited %}<span class="text-xs text-green-500">&#10003;</span>{% endif %}
+        </div>
+
+        {% for tc in turn.tool_calls.all %}
+        <div id="toolcall-{{ tc.pk }}" class="mt-2">
+            {% include "conversations/partials/tool_call_card.html" with tc=tc conversation=conversation %}
+        </div>
+        {% endfor %}
+    </div>
+</div>

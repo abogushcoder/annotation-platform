@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}My Conversations{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold text-gray-900 mb-6">Your Assignments</h1>
+
+<div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="bg-blue-50 rounded-lg p-4 text-center">
+        <div class="text-3xl font-bold text-blue-600">{{ assigned_count }}</div>
+        <div class="text-sm text-blue-800">Assigned</div>
+    </div>
+    <div class="bg-yellow-50 rounded-lg p-4 text-center">
+        <div class="text-3xl font-bold text-yellow-600">{{ in_progress_count }}</div>
+        <div class="text-sm text-yellow-800">In Progress</div>
+    </div>
+    <div class="bg-green-50 rounded-lg p-4 text-center">
+        <div class="text-3xl font-bold text-green-600">{{ completed_count }}</div>
+        <div class="text-sm text-green-800">Completed</div>
+    </div>
+</div>
+
+<div class="flex space-x-2 mb-4">
+    <a href="?status=assigned" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'assigned' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Assigned</a>
+    <a href="?status=in_progress" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'in_progress' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">In Progress</a>
+    <a href="?status=completed" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'completed' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Completed</a>
+    <a href="?status=all" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'all' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">All</a>
+</div>
+
+<div class="space-y-3">
+    {% for conv in conversations %}
+    <div class="bg-white rounded-lg shadow-sm border p-4 flex items-center justify-between">
+        <div>
+            <div class="flex items-center space-x-2">
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                    {% if conv.status == 'assigned' %}bg-blue-100 text-blue-800
+                    {% elif conv.status == 'in_progress' %}bg-yellow-100 text-yellow-800
+                    {% elif conv.status == 'completed' %}bg-green-100 text-green-800
+                    {% elif conv.status == 'flagged' %}bg-red-100 text-red-800
+                    {% else %}bg-gray-100 text-gray-800{% endif %}">
+                    {{ conv.get_status_display }}
+                </span>
+                <span class="font-medium text-gray-900">Conv #{{ conv.elevenlabs_id|truncatechars:10 }}</span>
+                <span class="text-gray-500 text-sm">{{ conv.agent.label }}</span>
+            </div>
+            <div class="text-sm text-gray-500 mt-1">
+                {% if conv.call_duration_secs %}Duration: {{ conv.call_duration_secs }}s{% endif %}
+                {% if conv.call_timestamp %} | {{ conv.call_timestamp|date:"M d, Y H:i" }}{% endif %}
+            </div>
+        </div>
+        <a href="{% url 'conversation_editor' conv.pk %}"
+           class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">
+            {% if conv.status == 'assigned' %}Start Editing{% elif conv.status == 'in_progress' %}Continue{% else %}View{% endif %}
+        </a>
+    </div>
+    {% empty %}
+    <div class="text-center py-12 text-gray-500">
+        No conversations found for this filter.
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
