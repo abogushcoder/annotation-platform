@@ -1,0 +1,19 @@
+{% comment %}Display card for remove_item tool call.{% endcomment %}
+<div class="text-xs space-y-2">
+    <div class="flex items-center gap-2 flex-wrap">
+        {% if d.order_id %}
+        <span class="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-mono">Order #{{ d.order_id }}</span>
+        {% endif %}
+        {% if d.item_name %}
+        <span class="inline-flex items-center bg-red-50 text-red-700 px-1.5 py-0.5 rounded">
+            <span class="line-through">{{ d.item_name }}</span>
+        </span>
+        {% endif %}
+    </div>
+
+    {% if tc.response_body %}
+    <div class="bg-gray-50 rounded px-2 py-1.5 text-gray-600">
+        {% if d.result.message %}{{ d.result.message }}{% else %}Item removed{% endif %}
+    </div>
+    {% endif %}
+</div>

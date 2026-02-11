@@ -1,0 +1,95 @@
+{% comment %}Edit form for create_order tool call. Expects 'd' (display data), 'tc', 'conversation' in context.{% endcomment %}
+<div class="space-y-3">
+    <div class="grid grid-cols-2 gap-3">
+        <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Customer Name</label>
+            <input type="text" name="arg_customerName" value="{{ d.raw_args.customerName }}"
+                class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Customer Phone</label>
+            <input type="text" name="arg_customerPhone" value="{{ d.raw_args.customerPhone }}"
+                class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none">
+        </div>
+    </div>
+
+    <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Items</label>
+        <div id="items-container-{{ tc.pk }}" class="space-y-2">
+            {% for item in d.items %}
+            <div data-item-row class="border border-gray-200 rounded p-2 bg-gray-50">
+                <div class="flex items-center gap-2 mb-1">
+                    <input type="text" name="item_name" value="{{ item.name }}" placeholder="Item name"
+                        class="flex-1 rounded border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none">
+                    <input type="number" name="item_qty" value="{{ item.quantity }}" min="1" style="width: 60px"
+                        class="rounded border border-gray-300 px-2 py-1 text-sm text-center focus:border-indigo-500 focus:outline-none">
+                    <button type="button" onclick="this.closest('[data-item-row]').remove()"
+                        class="text-red-400 hover:text-red-600 text-sm px-1">&times;</button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text" name="item_modifiers" value="{{ item.modifiers|join:', ' }}" placeholder="Modifiers (comma-separated)"
+                        class="flex-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none">
+                    <input type="text" name="item_special" value="{{ item.special }}" placeholder="Special instructions"
+                        class="flex-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none">
+                </div>
+            </div>
+            {% empty %}
+            <div class="text-xs text-gray-400 italic" id="no-items-msg-{{ tc.pk }}">No items added</div>
+            {% endfor %}
+        </div>
+        <button type="button" onclick="addItemRow_{{ tc.pk }}()"
+            class="mt-1 text-xs text-indigo-600 hover:text-indigo-800">+ Add Item</button>
+        <input type="hidden" name="arg_items" id="arg_items_{{ tc.pk }}">
+    </div>
+
+    <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Special Instructions</label>
+        <input type="text" name="arg_specialInstructions" value="{{ d.raw_args.specialInstructions }}"
+            class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none">
+    </div>
+</div>
+
+<script>
+function addItemRow_{{ tc.pk }}() {
+    var noMsg = document.getElementById('no-items-msg-{{ tc.pk }}');
+    if (noMsg) noMsg.remove();
+    var container = document.getElementById('items-container-{{ tc.pk }}');
+    var row = document.createElement('div');
+    row.setAttribute('data-item-row', '');
+    row.className = 'border border-gray-200 rounded p-2 bg-gray-50';
+    row.innerHTML = '<div class="flex items-center gap-2 mb-1">' +
+        '<input type="text" name="item_name" value="" placeholder="Item name" class="flex-1 rounded border border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:outline-none">' +
+        '<input type="number" name="item_qty" value="1" min="1" style="width: 60px" class="rounded border border-gray-300 px-2 py-1 text-sm text-center focus:border-indigo-500 focus:outline-none">' +
+        '<button type="button" onclick="this.closest(\'[data-item-row]\').remove()" class="text-red-400 hover:text-red-600 text-sm px-1">&times;</button>' +
+        '</div>' +
+        '<div class="flex items-center gap-2">' +
+        '<input type="text" name="item_modifiers" value="" placeholder="Modifiers (comma-separated)" class="flex-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none">' +
+        '<input type="text" name="item_special" value="" placeholder="Special instructions" class="flex-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none">' +
+        '</div>';
+    container.appendChild(row);
+}
+
+(function() {
+    var form = document.getElementById('arg_items_{{ tc.pk }}').closest('form');
+    form.addEventListener('submit', function() {
+        var items = [];
+        form.querySelectorAll('[data-item-row]').forEach(function(row) {
+            var name = row.querySelector('[name="item_name"]').value.trim();
+            if (!name) return;
+            var qty = parseInt(row.querySelector('[name="item_qty"]').value) || 1;
+            var modsStr = row.querySelector('[name="item_modifiers"]').value.trim();
+            var modifiers = modsStr ? modsStr.split(',').map(function(m) {
+                return {name: m.trim(), portion: 'whole'};
+            }).filter(function(m) { return m.name; }) : [];
+            var special = row.querySelector('[name="item_special"]') ? row.querySelector('[name="item_special"]').value.trim() : '';
+            items.push({
+                itemName: name,
+                quantity: qty,
+                modifiers: modifiers,
+                specialInstructions: special
+            });
+        });
+        document.getElementById('arg_items_{{ tc.pk }}').value = JSON.stringify(items);
+    });
+})();
+</script>

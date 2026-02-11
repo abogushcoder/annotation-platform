@@ -1,0 +1,20 @@
+{% comment %}Generic fallback display card for unknown tool calls.{% endcomment %}
+<div class="text-xs space-y-1">
+    {% if d.pairs %}
+    {% for pair in d.pairs %}
+    <div class="flex">
+        <span class="font-medium text-gray-600 w-32">{{ pair.key }}:</span>
+        <span class="text-gray-900 {% if '\n' in pair.value %}whitespace-pre-wrap font-mono text-[10px]{% endif %}">{{ pair.value }}</span>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if d.resp_pairs %}
+    <div class="mt-2 text-gray-500">
+        <span class="font-medium">Result:</span>
+        {% for pair in d.resp_pairs %}
+        {{ pair.key }}: {{ pair.value }}{% if not forloop.last %}, {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>

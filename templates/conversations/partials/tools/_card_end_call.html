@@ -1,0 +1,8 @@
+{% comment %}Display card for end_call tool call.{% endcomment %}
+<div class="text-xs">
+    {% if d.reason %}
+    <div class="text-gray-600">{{ d.reason }}</div>
+    {% else %}
+    <div class="text-gray-400 italic">Call ended</div>
+    {% endif %}
+</div>

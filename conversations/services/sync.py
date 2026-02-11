@@ -78,6 +78,16 @@ def _import_conversation(agent: Agent, conv_id: str, data: dict):
     )
 
     transcript = data.get('transcript', [])
+
+    # Build a map of tool results by request_id from all turns.
+    # ElevenLabs puts tool_results in a separate turn after the tool_calls turn.
+    tool_results_map = {}
+    for turn_data in transcript:
+        for tr in turn_data.get('tool_results', []):
+            req_id = tr.get('request_id', '')
+            if req_id:
+                tool_results_map[req_id] = tr
+
     for position, turn_data in enumerate(transcript):
         role = turn_data.get('role', 'user')
         if role not in ('user', 'agent'):
@@ -87,32 +97,72 @@ def _import_conversation(agent: Agent, conv_id: str, data: dict):
             conversation=conversation,
             position=position,
             role=role,
-            original_text=turn_data.get('message', ''),
+            original_text=turn_data.get('message') or '',
             time_in_call_secs=turn_data.get('time_in_call_secs'),
         )
 
         tool_calls = turn_data.get('tool_calls', [])
         for tc_data in tool_calls:
-            # Parse args from params or request_headers_body
-            original_args = tc_data.get('params', {})
-            if not original_args:
-                raw_body = tc_data.get('request_headers_body', '')
-                if raw_body:
-                    try:
-                        original_args = json.loads(raw_body)
-                    except (json.JSONDecodeError, TypeError):
-                        original_args = {}
-
-            # Parse response body
-            response_body = {}
-            raw_response = tc_data.get('response_body', '')
-            if isinstance(raw_response, str) and raw_response:
+            # Parse args: try params_as_json first, then tool_details.body,
+            # then legacy params/request_headers_body
+            original_args = {}
+            params_json = tc_data.get('params_as_json', '')
+            if params_json:
                 try:
-                    response_body = json.loads(raw_response)
+                    original_args = json.loads(params_json)
                 except (json.JSONDecodeError, TypeError):
-                    response_body = {'raw': raw_response}
-            elif isinstance(raw_response, dict):
-                response_body = raw_response
+                    pass
+
+            if not original_args:
+                tool_details = tc_data.get('tool_details', {})
+                if tool_details and tool_details.get('body'):
+                    try:
+                        original_args = json.loads(tool_details['body'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+            if not original_args:
+                original_args = tc_data.get('params', {})
+                if not original_args:
+                    raw_body = tc_data.get('request_headers_body', '')
+                    if raw_body:
+                        try:
+                            original_args = json.loads(raw_body)
+                        except (json.JSONDecodeError, TypeError):
+                            original_args = {}
+
+            # Strip internal system__ keys from args
+            original_args = {
+                k: v for k, v in original_args.items()
+                if not k.startswith('system__')
+            }
+
+            # Match tool result by request_id
+            request_id = tc_data.get('request_id', '')
+            result = tool_results_map.get(request_id, {})
+
+            response_body = {}
+            raw_result = result.get('result_value', '')
+            if isinstance(raw_result, str) and raw_result:
+                try:
+                    response_body = json.loads(raw_result)
+                except (json.JSONDecodeError, TypeError):
+                    response_body = {'raw': raw_result}
+            elif isinstance(raw_result, dict):
+                response_body = raw_result
+
+            # Fall back to legacy response_body on the tool call itself
+            if not response_body:
+                raw_response = tc_data.get('response_body', '')
+                if isinstance(raw_response, str) and raw_response:
+                    try:
+                        response_body = json.loads(raw_response)
+                    except (json.JSONDecodeError, TypeError):
+                        response_body = {'raw': raw_response}
+                elif isinstance(raw_response, dict):
+                    response_body = raw_response
+
+            error_msg = result.get('error_type', '') or tc_data.get('error_message', '') or ''
 
             ToolCall.objects.create(
                 turn=turn,
@@ -120,7 +170,7 @@ def _import_conversation(agent: Agent, conv_id: str, data: dict):
                 original_args=original_args,
                 status_code=tc_data.get('status_code'),
                 response_body=response_body,
-                error_message=tc_data.get('error_message', '') or '',
+                error_message=error_msg,
             )
 
     return conversation

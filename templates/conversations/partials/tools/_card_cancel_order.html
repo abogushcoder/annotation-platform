@@ -1,0 +1,20 @@
+{% comment %}Display card for cancel_order tool call.{% endcomment %}
+<div class="text-xs space-y-2">
+    <div class="flex items-center gap-2">
+        {% if d.order_id %}
+        <span class="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-mono">Order #{{ d.order_id }}</span>
+        {% endif %}
+    </div>
+
+    {% if d.reason %}
+    <div class="text-gray-600">
+        <span class="font-medium text-gray-500">Reason:</span> {{ d.reason }}
+    </div>
+    {% endif %}
+
+    {% if tc.response_body %}
+    <div class="bg-gray-50 rounded px-2 py-1.5 text-gray-600">
+        {% if d.result.message %}{{ d.result.message }}{% else %}Cancelled{% endif %}
+    </div>
+    {% endif %}
+</div>

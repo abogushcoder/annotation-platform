@@ -9,6 +9,8 @@ class User(AbstractUser):
 
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.ANNOTATOR)
 
+    REQUIRED_FIELDS = ['email', 'role']
+
     def is_admin(self):
         return self.role == self.Role.ADMIN
 

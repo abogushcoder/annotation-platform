@@ -2,6 +2,7 @@ import json
 import logging
 from functools import wraps
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q, Avg, F
@@ -75,14 +76,80 @@ def agent_list(request):
 @admin_required
 def agent_add(request):
     if request.method == 'POST':
+        agent_id = request.POST['agent_id']
+        label = request.POST.get('label') or ''
+        api_key = request.POST.get('api_key') or settings.ELEVENLABS_API_KEY
+
+        # If label wasn't provided, try to get it from the selected agent
+        if not label and api_key:
+            try:
+                from conversations.services.elevenlabs import ElevenLabsClient
+                client = ElevenLabsClient(api_key)
+                for a in client.list_agents():
+                    if a['agent_id'] == agent_id:
+                        label = a.get('name', agent_id)
+                        break
+            except Exception:
+                label = agent_id
+
         Agent.objects.create(
-            agent_id=request.POST['agent_id'],
-            label=request.POST['label'],
-            elevenlabs_api_key=request.POST['api_key'],
+            agent_id=agent_id,
+            label=label or agent_id,
+            elevenlabs_api_key=api_key,
         )
+
+        # Auto-import system prompt from the agent's ElevenLabs config
+        if api_key:
+            try:
+                from conversations.services.elevenlabs import ElevenLabsClient
+                client = ElevenLabsClient(api_key)
+                agent_config = client.get_agent(agent_id)
+                prompt_text = (
+                    agent_config
+                    .get('conversation_config', {})
+                    .get('agent', {})
+                    .get('prompt', {})
+                    .get('prompt', '')
+                )
+                if prompt_text:
+                    prompt_name = f"{label or agent_id} - System Prompt"
+                    existing = SystemPrompt.objects.filter(name=prompt_name).first()
+                    if not existing:
+                        has_active = SystemPrompt.objects.filter(is_active=True).exists()
+                        SystemPrompt.objects.create(
+                            name=prompt_name,
+                            content=prompt_text,
+                            is_active=not has_active,
+                        )
+                        messages.info(
+                            request,
+                            f'System prompt imported from ElevenLabs agent'
+                            f'{" and set as active" if not has_active else " (inactive — another prompt is already active)"}.'
+                        )
+            except Exception:
+                pass  # Non-critical — user can still add prompts manually
+
         messages.success(request, 'Agent added successfully.')
         return redirect('agent_list')
-    return render(request, 'admin_panel/agent_form.html', {'action': 'Add'})
+
+    # Fetch available agents from ElevenLabs for the dropdown
+    elevenlabs_agents = []
+    existing_ids = set(Agent.objects.values_list('agent_id', flat=True))
+    if settings.ELEVENLABS_API_KEY:
+        try:
+            from conversations.services.elevenlabs import ElevenLabsClient
+            client = ElevenLabsClient(settings.ELEVENLABS_API_KEY)
+            elevenlabs_agents = [
+                a for a in client.list_agents()
+                if a['agent_id'] not in existing_ids
+            ]
+        except Exception as e:
+            messages.warning(request, f'Could not fetch agents from ElevenLabs: {e}')
+
+    return render(request, 'admin_panel/agent_form.html', {
+        'action': 'Add',
+        'elevenlabs_agents': elevenlabs_agents,
+    })
 
 
 @admin_required
@@ -151,12 +218,19 @@ def assign_conversations(request):
     agents = Agent.objects.all()
     annotators = User.objects.filter(role='annotator', is_active=True)
 
+    unassigned_count = Conversation.objects.filter(status='unassigned').count()
+    assigned_count = Conversation.objects.filter(status='assigned').count()
+    in_progress_count = Conversation.objects.filter(status='in_progress').count()
+
     return render(request, 'admin_panel/assign.html', {
         'conversations': conversations,
         'agents': agents,
         'annotators': annotators,
         'status_filter': status_filter,
         'agent_filter': agent_filter,
+        'unassigned_count': unassigned_count,
+        'assigned_count': assigned_count,
+        'in_progress_count': in_progress_count,
     })
 
 
@@ -299,6 +373,13 @@ def export_download(request):
         messages.warning(request, 'No valid examples to export.')
         return redirect('export_page')
 
+    if len(examples) < 10:
+        messages.warning(
+            request,
+            f'OpenAI requires at least 10 training examples. You have {len(examples)}.'
+        )
+        return redirect('export_page')
+
     today = date.today().isoformat()
 
     if split:
@@ -421,6 +502,15 @@ def team_invite(request):
         password = request.POST['password']
         first_name = request.POST.get('first_name', '')
         last_name = request.POST.get('last_name', '')
+
+        if User.objects.filter(username=username).exists():
+            messages.error(request, f'Username "{username}" is already taken. Please choose another.')
+            return render(request, 'admin_panel/team_invite.html', {
+                'form_data': {
+                    'username': username, 'email': email,
+                    'first_name': first_name, 'last_name': last_name,
+                }
+            })
 
         user = User.objects.create_user(
             username=username, email=email, password=password,

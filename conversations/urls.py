@@ -11,4 +11,5 @@ urlpatterns = [
     path('<int:pk>/complete/', views.conversation_complete, name='conversation_complete'),
     path('<int:pk>/flag/', views.conversation_flag, name='conversation_flag'),
     path('<int:pk>/notes/', views.conversation_notes, name='conversation_notes'),
+    path('<int:pk>/audio/', views.conversation_audio, name='conversation_audio'),
 ]

@@ -24,11 +24,29 @@
 
 {% if conversation.has_audio %}
 <div class="bg-white rounded-lg shadow-sm border p-4 mb-4">
-    <h3 class="text-sm font-medium text-gray-700 mb-2">Audio Player</h3>
-    <audio controls class="w-full">
-        <source src="#" type="audio/mpeg">
-        Your browser does not support audio.
+    <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-medium text-gray-700">
+            Call Recording
+            {% if conversation.call_duration_secs %}
+            <span class="text-xs text-gray-500 font-normal ml-2">({{ conversation.call_duration_secs }}s)</span>
+            {% endif %}
+        </h3>
+    </div>
+    <audio controls preload="none" class="w-full"
+           aria-label="Conversation recording{% if conversation.call_duration_secs %}, {{ conversation.call_duration_secs }} seconds{% endif %}"
+           id="audio-player-{{ conversation.pk }}"
+           onloadstart="document.getElementById('audio-loading-{{ conversation.pk }}').classList.remove('hidden')"
+           oncanplay="document.getElementById('audio-loading-{{ conversation.pk }}').classList.add('hidden')"
+           onerror="document.getElementById('audio-error-{{ conversation.pk }}').classList.remove('hidden'); this.classList.add('hidden')">
+        <source src="{% url 'conversation_audio' conversation.pk %}" type="audio/mpeg">
+        Your browser does not support MP3 audio playback. Please use Chrome, Firefox, or Safari.
     </audio>
+    <p id="audio-loading-{{ conversation.pk }}" class="hidden text-xs text-gray-500 mt-1" aria-live="polite">
+        Loading audio...
+    </p>
+    <div id="audio-error-{{ conversation.pk }}" class="hidden bg-red-50 text-red-700 text-xs rounded px-2 py-1.5 mt-2" role="alert">
+        Audio unavailable or expired. <button onclick="location.reload()" class="underline hover:no-underline">Reload page</button> to try again.
+    </div>
 </div>
 {% endif %}
 

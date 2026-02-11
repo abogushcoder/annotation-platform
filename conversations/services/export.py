@@ -142,6 +142,31 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "end_call",
+            "description": "End the current phone call",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_menu_link",
+            "description": "Send a link to the online menu via SMS",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "customerPhone": {"type": "string", "description": "Customer's phone number"},
+                },
+                "required": ["customerPhone"],
+            },
+        },
+    },
 ]
 
 
@@ -161,6 +186,7 @@ def conversation_to_messages(conversation, include_system_prompt=True, include_t
     """
     messages = []
     call_counter = 0
+    seen_user = False
 
     # System prompt
     if include_system_prompt:
@@ -174,19 +200,13 @@ def conversation_to_messages(conversation, include_system_prompt=True, include_t
     turns = list(conversation.turns.prefetch_related('tool_calls').all())
 
     for turn in turns:
+        if turn.role == "user":
+            seen_user = True
+
         tool_calls_for_turn = list(turn.tool_calls.all())
 
         # If this turn has tool calls, we need special handling
         if tool_calls_for_turn:
-            # First, if there's text content, emit it as an assistant message
-            text = turn.display_text.strip()
-            if text:
-                messages.append({
-                    "role": "assistant",
-                    "content": text,
-                })
-
-            # Then emit the tool call(s) as an assistant message with tool_calls array
             tc_entries = []
             tc_responses = []
             for tc in tool_calls_for_turn:
@@ -205,8 +225,13 @@ def conversation_to_messages(conversation, include_system_prompt=True, include_t
 
                 # Build tool response
                 response_content = tc.response_body
-                if isinstance(response_content, dict):
-                    response_content = json.dumps(response_content)
+                if response_content is None:
+                    response_content = json.dumps({"status": "ok"})
+                elif isinstance(response_content, (dict, list)):
+                    if isinstance(response_content, dict) and not response_content:
+                        response_content = json.dumps({"status": "ok"})
+                    else:
+                        response_content = json.dumps(response_content)
                 elif not isinstance(response_content, str):
                     response_content = str(response_content)
 
@@ -216,10 +241,17 @@ def conversation_to_messages(conversation, include_system_prompt=True, include_t
                     "content": response_content,
                 })
 
-            messages.append({
+            # Combine text content and tool_calls into a single assistant message
+            assistant_msg = {
                 "role": "assistant",
                 "tool_calls": tc_entries,
-            })
+            }
+            text = turn.display_text.strip()
+            if text:
+                assistant_msg["content"] = text
+            if not seen_user:
+                assistant_msg["weight"] = 0
+            messages.append(assistant_msg)
 
             # Add tool responses
             messages.extend(tc_responses)
@@ -231,10 +263,13 @@ def conversation_to_messages(conversation, include_system_prompt=True, include_t
                 continue
 
             role = "user" if turn.role == "user" else "assistant"
-            messages.append({
+            msg = {
                 "role": role,
                 "content": text,
-            })
+            }
+            if role == "assistant" and not seen_user:
+                msg["weight"] = 0
+            messages.append(msg)
 
     result = {
         "messages": messages,
@@ -250,6 +285,9 @@ def conversation_to_messages(conversation, include_system_prompt=True, include_t
             ]
 
     return result
+
+
+MAX_EXAMPLE_TOKENS = 65536
 
 
 def validate_example(example):
@@ -269,19 +307,46 @@ def validate_example(example):
     if not has_assistant:
         errors.append("Missing assistant message")
 
+    # Last message must be assistant for the model to learn a final response
+    last_msg = msgs[-1]
+    if last_msg.get("role") != "assistant":
+        errors.append(f"Last message must be assistant (got {last_msg.get('role')})")
+
+    # Token limit check (rough estimate — 3 chars/token for JSON-heavy content)
+    example_chars = len(json.dumps(example))
+    estimated_tokens = example_chars // 3
+    if estimated_tokens > MAX_EXAMPLE_TOKENS:
+        errors.append(
+            f"Example exceeds token limit (~{estimated_tokens} tokens, max {MAX_EXAMPLE_TOKENS})"
+        )
+
     tool_call_ids = set()
-    for msg in msgs:
+    pending_tool_call_ids = set()
+
+    for i, msg in enumerate(msgs):
+        role = msg.get("role")
+
+        # First message must be system or user
+        if i == 0 and role not in ("system", "user"):
+            errors.append("First message must be system or user")
+
         # Check empty content
-        if msg.get("role") in ("user", "system") and not msg.get("content", "").strip():
-            errors.append(f"Empty content in {msg['role']} message")
+        if role in ("user", "system") and not msg.get("content", "").strip():
+            errors.append(f"Empty content in {role} message")
 
         # Validate tool calls
         if "tool_calls" in msg:
+            # If there are pending unmatched tool_call_ids from a previous block, error
+            if pending_tool_call_ids:
+                errors.append(f"Unmatched tool_call_ids: {pending_tool_call_ids}")
+            pending_tool_call_ids = set()
+
             for tc in msg["tool_calls"]:
                 tc_id = tc.get("id")
                 if tc_id in tool_call_ids:
                     errors.append(f"Duplicate tool_call_id: {tc_id}")
                 tool_call_ids.add(tc_id)
+                pending_tool_call_ids.add(tc_id)
 
                 args_str = tc.get("function", {}).get("arguments", "")
                 try:
@@ -289,7 +354,40 @@ def validate_example(example):
                 except (json.JSONDecodeError, TypeError):
                     errors.append(f"Invalid JSON args in {tc.get('function', {}).get('name')}")
 
+        elif role == "tool":
+            tc_id = msg.get("tool_call_id")
+            if not pending_tool_call_ids:
+                errors.append("Orphaned tool response (no preceding tool_calls)")
+            elif tc_id not in pending_tool_call_ids:
+                errors.append(f"tool_call_id '{tc_id}' not in preceding tool_calls")
+            else:
+                pending_tool_call_ids.discard(tc_id)
+            tool_content = msg.get("content", "")
+            if not tool_content or not tool_content.strip():
+                errors.append("Empty content in tool response")
+
+        else:
+            # Non-tool message encountered — any pending IDs are unmatched
+            if pending_tool_call_ids:
+                errors.append(f"Unmatched tool_call_ids: {pending_tool_call_ids}")
+                pending_tool_call_ids = set()
+
+    # After loop — check for trailing unmatched
+    if pending_tool_call_ids:
+        errors.append(f"Unmatched tool_call_ids at end: {pending_tool_call_ids}")
+
     return errors
+
+
+def validate_dataset(examples):
+    """Validate the full dataset. Returns list of warning strings."""
+    warnings = []
+    if len(examples) < 10:
+        warnings.append(
+            f"OpenAI requires at least 10 training examples. "
+            f"You have {len(examples)}. The fine-tuning job will be rejected."
+        )
+    return warnings
 
 
 def generate_jsonl_examples(limit=None, agent_id=None, tool_calls_only=False,

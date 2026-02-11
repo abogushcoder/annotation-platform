@@ -1,0 +1,32 @@
+{% comment %}Display card for check_availability tool call.{% endcomment %}
+<div class="text-xs space-y-2">
+    <div class="text-gray-700 flex items-center flex-wrap gap-x-2">
+        {% if d.date %}<span>{{ d.date }}</span>{% endif %}
+        {% if d.time %}<span>&middot; {{ d.time }}</span>{% endif %}
+        {% if d.party_size %}<span>&middot; Party of {{ d.party_size }}</span>{% endif %}
+    </div>
+
+    {% if tc.response_body %}
+    <div>
+        {% if d.result.available %}
+        <span class="inline-flex items-center bg-green-50 text-green-700 px-2 py-0.5 rounded text-xs font-medium">
+            Available
+        </span>
+        {% elif d.result.available == False %}
+        <span class="inline-flex items-center bg-red-50 text-red-700 px-2 py-0.5 rounded text-xs font-medium">
+            Not Available
+        </span>
+        {% endif %}
+        {% if d.result.message %}
+        <span class="text-gray-500 ml-1">{{ d.result.message }}</span>
+        {% endif %}
+    </div>
+    {% if d.result.time_slots %}
+    <div class="flex flex-wrap gap-1 mt-1">
+        {% for slot in d.result.time_slots %}
+        <span class="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[10px]">{{ slot }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+</div>

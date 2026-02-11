@@ -1,0 +1,17 @@
+{% comment %}Display card for get_past_orders tool call.{% endcomment %}
+<div class="text-xs space-y-2">
+    {% if d.customer_phone %}
+    <div class="text-gray-600">Phone: {{ d.customer_phone }}</div>
+    {% endif %}
+
+    {% if tc.response_body %}
+        {% if d.orders %}
+        <div class="text-gray-600">{{ d.orders|length }} past order{{ d.orders|length|pluralize }}</div>
+        {% else %}
+        <div class="text-gray-400 italic">No past orders found</div>
+        {% endif %}
+        {% if d.result.message %}
+        <div class="text-gray-500">{{ d.result.message }}</div>
+        {% endif %}
+    {% endif %}
+</div>

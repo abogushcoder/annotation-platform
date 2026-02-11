@@ -5,8 +5,42 @@
     <h1 class="text-2xl font-bold text-gray-900">Assign Conversations</h1>
     <form method="post" action="{% url 'auto_distribute' %}">
         {% csrf_token %}
-        <button type="submit" class="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700">Auto-Distribute All</button>
+        <button type="submit"
+            {% if unassigned_count == 0 %}disabled title="No unassigned conversations to distribute"{% endif %}
+            class="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 {% if unassigned_count == 0 %}opacity-50 cursor-not-allowed{% endif %}">
+            Auto-Distribute All
+        </button>
     </form>
+</div>
+
+<!-- Filter bar -->
+<div class="flex flex-wrap items-center gap-3 mb-4">
+    <div class="flex flex-wrap gap-2">
+        <a href="?status=unassigned{% if agent_filter %}&agent={{ agent_filter }}{% endif %}"
+           class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'unassigned' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+            Unassigned ({{ unassigned_count }})
+        </a>
+        <a href="?status=assigned{% if agent_filter %}&agent={{ agent_filter }}{% endif %}"
+           class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'assigned' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+            Assigned ({{ assigned_count }})
+        </a>
+        <a href="?status=in_progress{% if agent_filter %}&agent={{ agent_filter }}{% endif %}"
+           class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'in_progress' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+            In Progress ({{ in_progress_count }})
+        </a>
+        <a href="?{% if agent_filter %}agent={{ agent_filter }}{% endif %}"
+           class="px-3 py-1.5 rounded text-sm font-medium {% if not status_filter %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
+            All
+        </a>
+    </div>
+
+    <select onchange="var s=new URLSearchParams(window.location.search);if(this.value)s.set('agent',this.value);else s.delete('agent');window.location.search=s.toString();"
+            class="rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white">
+        <option value="">All Agents</option>
+        {% for ag in agents %}
+        <option value="{{ ag.pk }}" {% if agent_filter == ag.pk|stringformat:"d" %}selected{% endif %}>{{ ag.label }}</option>
+        {% endfor %}
+    </select>
 </div>
 
 <form method="post">
@@ -38,7 +72,14 @@
             {% endif %}
         </div>
         {% empty %}
-        <div class="p-6 text-center text-gray-500">No conversations match this filter.</div>
+        <div class="p-6 text-center text-gray-500">
+            {% if status_filter == 'unassigned' %}
+                All conversations have been assigned.
+                <a href="{% url 'agent_list' %}" class="text-indigo-600 hover:text-indigo-800 underline ml-1">Sync more from Agents</a>
+            {% else %}
+                No conversations match the selected filters.
+            {% endif %}
+        </div>
         {% endfor %}
     </div>
 </form>

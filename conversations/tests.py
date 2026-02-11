@@ -1,4 +1,5 @@
 import json
+import requests
 from unittest.mock import patch, MagicMock
 from django.test import TestCase, Client
 from django.db import IntegrityError
@@ -7,9 +8,10 @@ from django.utils import timezone
 from accounts.models import User
 from conversations.models import Agent, Conversation, Turn, ToolCall, SystemPrompt, ExportLog
 from conversations.services.export import (
-    conversation_to_messages, validate_example, generate_jsonl_examples,
-    export_jsonl, split_train_validation, count_tokens, estimate_training_cost,
-    TOOL_DEFINITIONS,
+    conversation_to_messages, validate_example, validate_dataset,
+    generate_jsonl_examples, export_jsonl, split_train_validation,
+    count_tokens, estimate_training_cost, TOOL_DEFINITIONS,
+    MAX_EXAMPLE_TOKENS,
 )
 from conversations.services.sync import sync_agent_conversations, _import_conversation
 
@@ -464,12 +466,13 @@ class ExportTests(TestCase):
         self.assertNotIn('tools', result)
 
     def test_tool_definitions_count(self):
-        self.assertEqual(len(TOOL_DEFINITIONS), 8)
+        self.assertEqual(len(TOOL_DEFINITIONS), 10)
 
     def test_tool_definitions_structure(self):
         expected_tools = [
             'create_order', 'cancel_order', 'remove_item', 'modify_item',
-            'check_availability', 'create_reservation', 'get_specials', 'get_past_orders'
+            'check_availability', 'create_reservation', 'get_specials', 'get_past_orders',
+            'end_call', 'send_menu_link'
         ]
         actual_tools = [t['function']['name'] for t in TOOL_DEFINITIONS]
         for tool in expected_tools:
@@ -604,8 +607,8 @@ class ExportTests(TestCase):
         result = conversation_to_messages(conv)
         tool_msgs = [m for m in result['messages'] if m['role'] == 'tool']
         self.assertEqual(len(tool_msgs), 1)
-        # Empty dict becomes "{}"
-        self.assertEqual(tool_msgs[0]['content'], '{}')
+        # Empty dict becomes {"status": "ok"}
+        self.assertEqual(tool_msgs[0]['content'], '{"status": "ok"}')
 
     def test_tool_call_error_status_code(self):
         conv = Conversation.objects.create(
@@ -657,6 +660,256 @@ class ExportTests(TestCase):
         assistant_msgs = [m for m in result['messages'] if m.get('role') == 'assistant']
         self.assertEqual(len(assistant_msgs), 1)
         self.assertEqual(assistant_msgs[0]['content'], 'Hello!')
+
+    # ---- Fix 1: Empty response body ----
+
+    def test_empty_response_body_gets_status_ok(self):
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_empty_resp', agent=self.agent, status='approved',
+            call_timestamp=timezone.now()
+        )
+        Turn.objects.create(conversation=conv, position=0, role='user', original_text='Any specials?')
+        turn = Turn.objects.create(conversation=conv, position=1, role='agent', original_text='Let me check.')
+        ToolCall.objects.create(
+            turn=turn, tool_name='get_specials', original_args={},
+            status_code=200, response_body={},
+        )
+        result = conversation_to_messages(conv)
+        tool_msgs = [m for m in result['messages'] if m['role'] == 'tool']
+        content = json.loads(tool_msgs[0]['content'])
+        self.assertEqual(content, {"status": "ok"})
+
+    # ---- Fix 2: Validator ordering checks ----
+
+    def test_validate_first_message_must_be_system_or_user(self):
+        example = {'messages': [
+            {'role': 'assistant', 'content': 'hello'},
+            {'role': 'user', 'content': 'hi'},
+        ]}
+        errors = validate_example(example)
+        self.assertTrue(any('First message must be system or user' in e for e in errors))
+
+    def test_validate_orphaned_tool_response(self):
+        example = {'messages': [
+            {'role': 'system', 'content': 'test'},
+            {'role': 'user', 'content': 'hi'},
+            {'role': 'tool', 'tool_call_id': 'call_001', 'content': '{}'},
+            {'role': 'assistant', 'content': 'done'},
+        ]}
+        errors = validate_example(example)
+        self.assertTrue(any('Orphaned tool response' in e for e in errors))
+
+    def test_validate_unmatched_tool_call_ids(self):
+        example = {'messages': [
+            {'role': 'system', 'content': 'test'},
+            {'role': 'user', 'content': 'hi'},
+            {'role': 'assistant', 'tool_calls': [
+                {'id': 'call_001', 'type': 'function', 'function': {'name': 'get_specials', 'arguments': '{}'}},
+            ]},
+            {'role': 'tool', 'tool_call_id': 'call_999', 'content': '{}'},
+        ]}
+        errors = validate_example(example)
+        self.assertTrue(any("call_999" in e and "not in preceding" in e for e in errors))
+
+    def test_validate_missing_tool_response(self):
+        example = {'messages': [
+            {'role': 'system', 'content': 'test'},
+            {'role': 'user', 'content': 'hi'},
+            {'role': 'assistant', 'tool_calls': [
+                {'id': 'call_001', 'type': 'function', 'function': {'name': 'get_specials', 'arguments': '{}'}},
+            ]},
+            {'role': 'assistant', 'content': 'Here you go!'},
+        ]}
+        errors = validate_example(example)
+        self.assertTrue(any('Unmatched tool_call_ids' in e for e in errors))
+
+    def test_validate_tool_ordering_valid(self):
+        example = {'messages': [
+            {'role': 'system', 'content': 'test'},
+            {'role': 'user', 'content': 'hi'},
+            {'role': 'assistant', 'tool_calls': [
+                {'id': 'call_001', 'type': 'function', 'function': {'name': 'get_specials', 'arguments': '{}'}},
+            ]},
+            {'role': 'tool', 'tool_call_id': 'call_001', 'content': '{"status": "ok"}'},
+            {'role': 'assistant', 'content': 'Here are the specials!'},
+        ]}
+        errors = validate_example(example)
+        self.assertEqual(errors, [])
+
+    # ---- Fix 3: Dataset minimum warning ----
+
+    def test_dataset_warning_below_10(self):
+        examples = [{'messages': [{'role': 'user', 'content': f'msg {i}'}]} for i in range(5)]
+        warnings = validate_dataset(examples)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn('at least 10', warnings[0])
+        self.assertIn('5', warnings[0])
+
+    def test_dataset_warning_at_10(self):
+        examples = [{'messages': [{'role': 'user', 'content': f'msg {i}'}]} for i in range(10)]
+        warnings = validate_dataset(examples)
+        self.assertEqual(warnings, [])
+
+    # ---- Fix 4: Weight on greeting ----
+
+    def test_weight_zero_on_greeting(self):
+        """First assistant message before any user message gets weight: 0."""
+        result = conversation_to_messages(self.conv)
+        msgs = result['messages']
+        # First assistant message is the greeting (position 0, before user at position 1)
+        assistant_msgs = [m for m in msgs if m.get('role') == 'assistant']
+        self.assertEqual(assistant_msgs[0].get('weight'), 0)
+
+    def test_weight_not_set_after_user(self):
+        """Assistant messages after the first user message have no weight key (default 1)."""
+        result = conversation_to_messages(self.conv)
+        msgs = result['messages']
+        # The last assistant message "Order placed!" comes after user input
+        last_assistant = [m for m in msgs if m.get('role') == 'assistant' and 'tool_calls' not in m]
+        # Last one should be "Order placed!" which is after user
+        self.assertNotIn('weight', last_assistant[-1])
+
+    def test_weight_on_tool_call_before_user(self):
+        """Tool-call assistant message before first user gets weight: 0."""
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_weight_tc', agent=self.agent, status='approved',
+            call_timestamp=timezone.now()
+        )
+        turn = Turn.objects.create(conversation=conv, position=0, role='agent', original_text='Checking menu...')
+        ToolCall.objects.create(
+            turn=turn, tool_name='get_specials', original_args={},
+            status_code=200, response_body={'specials': []},
+        )
+        Turn.objects.create(conversation=conv, position=1, role='user', original_text='What do you have?')
+        Turn.objects.create(conversation=conv, position=2, role='agent', original_text='Here are our specials!')
+        result = conversation_to_messages(conv)
+        msgs = result['messages']
+        # The tool_calls assistant msg (before user) should have weight: 0
+        tc_msg = [m for m in msgs if 'tool_calls' in m][0]
+        self.assertEqual(tc_msg.get('weight'), 0)
+        # The final assistant msg (after user) should NOT have weight
+        final_assistant = [m for m in msgs if m.get('role') == 'assistant' and 'tool_calls' not in m][-1]
+        self.assertNotIn('weight', final_assistant)
+
+    # ---- Fix 5: None response_body ----
+
+    def test_none_response_body_gets_status_ok(self):
+        """None response_body becomes {"status": "ok"} in export."""
+        # Use mocks to simulate None response_body (DB has NOT NULL constraint)
+        mock_tc = MagicMock()
+        mock_tc.tool_name = 'get_specials'
+        mock_tc.display_args = {}
+        mock_tc.response_body = None
+
+        mock_turn_user = MagicMock()
+        mock_turn_user.role = 'user'
+        mock_turn_user.display_text = 'Specials?'
+        mock_turn_user.tool_calls.all.return_value = []
+
+        mock_turn_tc = MagicMock()
+        mock_turn_tc.role = 'agent'
+        mock_turn_tc.display_text = 'Checking...'
+        mock_turn_tc.tool_calls.all.return_value = [mock_tc]
+
+        mock_turn_final = MagicMock()
+        mock_turn_final.role = 'agent'
+        mock_turn_final.display_text = 'Here!'
+        mock_turn_final.tool_calls.all.return_value = []
+
+        mock_conv = MagicMock()
+        mock_conv.turns.prefetch_related.return_value.all.return_value = [
+            mock_turn_user, mock_turn_tc, mock_turn_final,
+        ]
+
+        result = conversation_to_messages(mock_conv, include_system_prompt=False, include_tools=False)
+        tool_msgs = [m for m in result['messages'] if m['role'] == 'tool']
+        self.assertEqual(tool_msgs[0]['content'], '{"status": "ok"}')
+
+    # ---- Fix 6: Last message must be assistant ----
+
+    def test_validate_last_message_must_be_assistant(self):
+        """Example ending on user or tool message should fail validation."""
+        # Ends on user
+        example_user = {'messages': [
+            {'role': 'system', 'content': 'test'},
+            {'role': 'user', 'content': 'hi'},
+            {'role': 'assistant', 'content': 'hello'},
+            {'role': 'user', 'content': 'bye'},
+        ]}
+        errors = validate_example(example_user)
+        self.assertTrue(any('Last message must be assistant' in e for e in errors))
+
+        # Ends on tool
+        example_tool = {'messages': [
+            {'role': 'user', 'content': 'hi'},
+            {'role': 'assistant', 'tool_calls': [
+                {'id': 'call_001', 'type': 'function', 'function': {'name': 'get_specials', 'arguments': '{}'}},
+            ]},
+            {'role': 'tool', 'tool_call_id': 'call_001', 'content': '{"status": "ok"}'},
+        ]}
+        errors = validate_example(example_tool)
+        self.assertTrue(any('Last message must be assistant' in e for e in errors))
+
+    def test_validate_last_message_assistant_passes(self):
+        """Example ending on assistant message passes the last-message check."""
+        example = {'messages': [
+            {'role': 'user', 'content': 'hi'},
+            {'role': 'assistant', 'content': 'hello'},
+        ]}
+        errors = validate_example(example)
+        self.assertFalse(any('Last message must be assistant' in e for e in errors))
+
+    # ---- Fix 7: Token limit check ----
+
+    def test_validate_example_token_limit(self):
+        """Huge example triggers token limit error."""
+        # Create a message with content larger than MAX_EXAMPLE_TOKENS * 3 chars
+        huge_content = "x" * (MAX_EXAMPLE_TOKENS * 4)
+        example = {'messages': [
+            {'role': 'user', 'content': huge_content},
+            {'role': 'assistant', 'content': 'ok'},
+        ]}
+        errors = validate_example(example)
+        self.assertTrue(any('exceeds token limit' in e for e in errors))
+
+    # ---- Fix 8: List response_body ----
+
+    def test_list_response_body_serialized(self):
+        """List response_body is properly JSON-serialized (not Python repr)."""
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_list_resp', agent=self.agent, status='approved',
+            call_timestamp=timezone.now()
+        )
+        Turn.objects.create(conversation=conv, position=0, role='user', original_text='Menu?')
+        turn = Turn.objects.create(conversation=conv, position=1, role='agent', original_text='Checking...')
+        ToolCall.objects.create(
+            turn=turn, tool_name='get_specials', original_args={},
+            status_code=200, response_body=[{"item": "Pizza"}, {"item": "Pasta"}],
+        )
+        Turn.objects.create(conversation=conv, position=2, role='agent', original_text='Here!')
+        result = conversation_to_messages(conv)
+        tool_msgs = [m for m in result['messages'] if m['role'] == 'tool']
+        content = tool_msgs[0]['content']
+        # Must be valid JSON
+        parsed = json.loads(content)
+        self.assertEqual(parsed, [{"item": "Pizza"}, {"item": "Pasta"}])
+        # Must NOT contain single quotes (Python repr)
+        self.assertNotIn("'", content)
+
+    # ---- Fix 9: Empty tool content ----
+
+    def test_validate_empty_tool_content(self):
+        """Empty tool response content fails validation."""
+        example = {'messages': [
+            {'role': 'user', 'content': 'hi'},
+            {'role': 'assistant', 'tool_calls': [
+                {'id': 'call_001', 'type': 'function', 'function': {'name': 'get_specials', 'arguments': '{}'}},
+            ]},
+            {'role': 'tool', 'tool_call_id': 'call_001', 'content': ''},
+            {'role': 'assistant', 'content': 'done'},
+        ]}
+        errors = validate_example(example)
+        self.assertTrue(any('Empty content in tool response' in e for e in errors))
 
 
 # =============================================================================
@@ -1382,32 +1635,39 @@ class ViewTests(TestCase):
         response = self.client.get('/admin-panel/export/download/?include_system_prompt&include_tools')
         self.assertEqual(response.status_code, 302)
 
+    def _create_approved_conversations(self, count, prefix='conv_bulk'):
+        """Helper to create approved conversations with user+agent turns."""
+        for i in range(count):
+            conv = Conversation.objects.create(
+                elevenlabs_id=f'{prefix}_{i}', agent=self.agent, status='approved',
+                call_timestamp=timezone.now()
+            )
+            Turn.objects.create(conversation=conv, position=0, role='user', original_text=f'Hi {i}')
+            Turn.objects.create(conversation=conv, position=1, role='agent', original_text=f'Hello {i}')
+
     def test_export_download_with_data(self):
         self.client.login(username='admin', password='admin')
         SystemPrompt.objects.create(name='P', content='Prompt', is_active=True)
-        conv = Conversation.objects.create(
-            elevenlabs_id='conv_dl', agent=self.agent, status='approved',
-            call_timestamp=timezone.now()
-        )
-        Turn.objects.create(conversation=conv, position=0, role='user', original_text='Hi')
-        Turn.objects.create(conversation=conv, position=1, role='agent', original_text='Hello')
+        self._create_approved_conversations(10, prefix='conv_dl')
         response = self.client.get('/admin-panel/export/download/?include_system_prompt&include_tools')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/jsonl')
         content = response.content.decode()
-        parsed = json.loads(content.strip())
+        first_line = content.strip().split('\n')[0]
+        parsed = json.loads(first_line)
         self.assertIn('messages', parsed)
+
+    def test_export_download_blocked_under_10(self):
+        self.client.login(username='admin', password='admin')
+        SystemPrompt.objects.create(name='P', content='Prompt', is_active=True)
+        self._create_approved_conversations(5, prefix='conv_few')
+        response = self.client.get('/admin-panel/export/download/?include_system_prompt&include_tools')
+        self.assertEqual(response.status_code, 302)
 
     def test_export_download_split(self):
         self.client.login(username='admin', password='admin')
         SystemPrompt.objects.create(name='P', content='Prompt', is_active=True)
-        for i in range(5):
-            conv = Conversation.objects.create(
-                elevenlabs_id=f'conv_split_dl_{i}', agent=self.agent, status='approved',
-                call_timestamp=timezone.now()
-            )
-            Turn.objects.create(conversation=conv, position=0, role='user', original_text='Hi')
-            Turn.objects.create(conversation=conv, position=1, role='agent', original_text='Hello')
+        self._create_approved_conversations(10, prefix='conv_split_dl')
         response = self.client.get('/admin-panel/export/download/?include_system_prompt&include_tools&split')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/zip')
@@ -1415,12 +1675,7 @@ class ViewTests(TestCase):
     def test_export_creates_log(self):
         self.client.login(username='admin', password='admin')
         SystemPrompt.objects.create(name='P', content='Prompt', is_active=True)
-        conv = Conversation.objects.create(
-            elevenlabs_id='conv_log', agent=self.agent, status='approved',
-            call_timestamp=timezone.now()
-        )
-        Turn.objects.create(conversation=conv, position=0, role='user', original_text='Hi')
-        Turn.objects.create(conversation=conv, position=1, role='agent', original_text='Hello')
+        self._create_approved_conversations(10, prefix='conv_log')
         self.assertEqual(ExportLog.objects.count(), 0)
         self.client.get('/admin-panel/export/download/?include_system_prompt&include_tools')
         self.assertEqual(ExportLog.objects.count(), 1)
@@ -1448,3 +1703,213 @@ class ViewTests(TestCase):
         Turn.objects.create(conversation=conv, position=0, role='user', original_text='test')
         response = self.client.get(f'/admin-panel/review/{conv.pk}/')
         self.assertEqual(response.status_code, 200)
+
+    # ---- Audio Proxy ----
+
+    @patch('conversations.views.ElevenLabsClient')
+    def test_conversation_audio_happy_path_assigned_user(self, MockClient):
+        self.client.login(username='annotator', password='annotator')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_001', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=True
+        )
+        mock_instance = MockClient.return_value
+        fake_audio = b'\x00\x01\x02\x03\x04\x05'
+        mock_instance.get_conversation_audio.return_value = fake_audio
+
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'audio/mpeg')
+        self.assertEqual(response['Content-Length'], '6')
+        self.assertEqual(response['Content-Disposition'], 'inline')
+        self.assertEqual(response['Cache-Control'], 'private, max-age=3600')
+        self.assertEqual(response.content, fake_audio)
+
+    @patch('conversations.views.ElevenLabsClient')
+    def test_conversation_audio_happy_path_admin(self, MockClient):
+        self.client.login(username='admin', password='admin')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_admin', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=True
+        )
+        mock_instance = MockClient.return_value
+        fake_audio = b'\xFF\xFE\xFD\xFC'
+        mock_instance.get_conversation_audio.return_value = fake_audio
+
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'audio/mpeg')
+        self.assertEqual(response['Content-Length'], '4')
+        self.assertEqual(response.content, fake_audio)
+
+    def test_conversation_audio_permission_denied_unassigned_annotator(self):
+        self.client.login(username='annotator', password='annotator')
+        other_annotator = User.objects.create_user(
+            username='other_ann', password='other', role='annotator'
+        )
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_other', agent=self.agent,
+            assigned_to=other_annotator, status='in_progress',
+            has_audio=True
+        )
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('Permission denied', response.content.decode())
+
+    def test_conversation_audio_unauthenticated_redirect(self):
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_unauth', agent=self.agent,
+            has_audio=True
+        )
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/login/', response.url)
+
+    def test_conversation_audio_has_audio_false(self):
+        self.client.login(username='annotator', password='annotator')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_no_audio', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=False
+        )
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 404)
+        self.assertIn('Audio not available', response.content.decode())
+
+    def test_conversation_audio_missing_elevenlabs_id(self):
+        self.client.login(username='annotator', password='annotator')
+        conv = Conversation.objects.create(
+            elevenlabs_id='', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=True
+        )
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 404)
+        self.assertIn('Audio not available', response.content.decode())
+
+    @patch('conversations.views.ElevenLabsClient')
+    def test_conversation_audio_elevenlabs_422_error(self, MockClient):
+        self.client.login(username='annotator', password='annotator')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_422', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=True
+        )
+        mock_instance = MockClient.return_value
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        http_error = requests.exceptions.HTTPError(response=mock_response)
+        mock_instance.get_conversation_audio.side_effect = http_error
+
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 404)
+        self.assertIn('Audio no longer available', response.content.decode())
+
+    @patch('conversations.views.ElevenLabsClient')
+    def test_conversation_audio_elevenlabs_500_error(self, MockClient):
+        self.client.login(username='annotator', password='annotator')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_500', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=True
+        )
+        mock_instance = MockClient.return_value
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        http_error = requests.exceptions.HTTPError(response=mock_response)
+        mock_instance.get_conversation_audio.side_effect = http_error
+
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 502)
+        self.assertIn('Failed to fetch audio', response.content.decode())
+
+    @patch('conversations.views.ElevenLabsClient')
+    def test_conversation_audio_elevenlabs_404_error(self, MockClient):
+        self.client.login(username='annotator', password='annotator')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_404', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=True
+        )
+        mock_instance = MockClient.return_value
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        http_error = requests.exceptions.HTTPError(response=mock_response)
+        mock_instance.get_conversation_audio.side_effect = http_error
+
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 502)
+        self.assertIn('Failed to fetch audio', response.content.decode())
+
+    @patch('conversations.views.ElevenLabsClient')
+    def test_conversation_audio_http_error_no_response(self, MockClient):
+        self.client.login(username='annotator', password='annotator')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_no_resp', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=True
+        )
+        mock_instance = MockClient.return_value
+        http_error = requests.exceptions.HTTPError()
+        http_error.response = None
+        mock_instance.get_conversation_audio.side_effect = http_error
+
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 502)
+        self.assertIn('Failed to fetch audio', response.content.decode())
+
+    @patch('conversations.views.ElevenLabsClient')
+    def test_conversation_audio_generic_exception(self, MockClient):
+        self.client.login(username='annotator', password='annotator')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_exc', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=True
+        )
+        mock_instance = MockClient.return_value
+        mock_instance.get_conversation_audio.side_effect = Exception("Network timeout")
+
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 502)
+        self.assertIn('Failed to fetch audio', response.content.decode())
+
+    @patch('conversations.views.ElevenLabsClient')
+    def test_conversation_audio_content_length_matches(self, MockClient):
+        self.client.login(username='annotator', password='annotator')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_length', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=True
+        )
+        mock_instance = MockClient.return_value
+        # Large audio file simulation
+        large_audio = b'\x00' * 1024 * 100  # 100KB
+        mock_instance.get_conversation_audio.return_value = large_audio
+
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Length'], str(len(large_audio)))
+        self.assertEqual(len(response.content), len(large_audio))
+
+    @patch('conversations.views.ElevenLabsClient')
+    def test_conversation_audio_empty_audio_bytes(self, MockClient):
+        self.client.login(username='annotator', password='annotator')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_audio_empty', agent=self.agent,
+            assigned_to=self.annotator, status='in_progress',
+            has_audio=True
+        )
+        mock_instance = MockClient.return_value
+        mock_instance.get_conversation_audio.return_value = b''
+
+        response = self.client.get(f'/conversations/{conv.pk}/audio/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Length'], '0')
+        self.assertEqual(response.content, b'')
+
+    def test_conversation_audio_nonexistent_conversation(self):
+        self.client.login(username='annotator', password='annotator')
+        response = self.client.get('/conversations/99999/audio/')
+        self.assertEqual(response.status_code, 404)

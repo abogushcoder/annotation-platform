@@ -1,0 +1,21 @@
+{% comment %}Generic fallback edit form for unknown tool calls. Uses get_tool_fields for backward compat.{% endcomment %}
+{% load conversation_tags %}
+{% get_tool_fields tc as fields %}
+{% for field in fields %}
+<div class="mb-3">
+    <label class="block text-xs font-medium text-gray-600 mb-1">{{ field.label }}</label>
+    {% if field.type == 'textarea' %}
+    <textarea name="arg_{{ field.name }}" rows="2"
+        class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none">{{ field.value }}</textarea>
+    {% elif field.type == 'number' %}
+    <input type="number" name="arg_{{ field.name }}" value="{{ field.value }}"
+        class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none">
+    {% elif field.type == 'json' %}
+    <textarea name="arg_{{ field.name }}" rows="4"
+        class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono focus:border-indigo-500 focus:outline-none">{{ field.value }}</textarea>
+    {% else %}
+    <input type="text" name="arg_{{ field.name }}" value="{{ field.value }}"
+        class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none">
+    {% endif %}
+</div>
+{% endfor %}

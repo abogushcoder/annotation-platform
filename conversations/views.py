@@ -1,9 +1,12 @@
+import requests
+
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import render, get_object_or_404, redirect
 from django.utils import timezone
 
 from .models import Conversation, Turn, ToolCall
+from .services.elevenlabs import ElevenLabsClient
 
 
 @login_required
@@ -149,3 +152,29 @@ def conversation_notes(request, pk):
         conversation.save()
         return HttpResponse('<span class="text-green-600 text-sm">Saved</span>')
     return HttpResponse('')
+
+
+@login_required
+def conversation_audio(request, pk):
+    conversation = get_object_or_404(Conversation, pk=pk)
+    if not request.user.is_admin() and conversation.assigned_to != request.user:
+        return HttpResponse("Permission denied", status=403)
+
+    if not conversation.has_audio or not conversation.elevenlabs_id:
+        return HttpResponse("Audio not available", status=404)
+
+    try:
+        client = ElevenLabsClient(conversation.agent.elevenlabs_api_key)
+        audio_bytes = client.get_conversation_audio(conversation.elevenlabs_id)
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 422:
+            return HttpResponse("Audio no longer available", status=404)
+        return HttpResponse("Failed to fetch audio", status=502)
+    except Exception:
+        return HttpResponse("Failed to fetch audio", status=502)
+
+    response = HttpResponse(audio_bytes, content_type='audio/mpeg')
+    response['Content-Length'] = len(audio_bytes)
+    response['Content-Disposition'] = 'inline'
+    response['Cache-Control'] = 'private, max-age=3600'
+    return response

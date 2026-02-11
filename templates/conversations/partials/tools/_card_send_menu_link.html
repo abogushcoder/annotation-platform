@@ -1,0 +1,19 @@
+{% comment %}Display card for send_menu_link tool call.{% endcomment %}
+<div class="text-xs space-y-2">
+    {% if d.customer_phone %}
+    <div class="text-gray-600">Sent to {{ d.customer_phone }}</div>
+    {% endif %}
+
+    {% if tc.response_body %}
+    <div>
+        {% if d.result.success %}
+        <span class="inline-flex items-center bg-green-50 text-green-700 px-2 py-0.5 rounded font-medium">Sent</span>
+        {% else %}
+        <span class="inline-flex items-center bg-red-50 text-red-700 px-2 py-0.5 rounded font-medium">Failed</span>
+        {% endif %}
+        {% if d.result.message %}
+        <span class="text-gray-500 ml-1">{{ d.result.message }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>

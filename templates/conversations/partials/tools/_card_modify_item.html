@@ -1,0 +1,33 @@
+{% comment %}Display card for modify_item tool call.{% endcomment %}
+<div class="text-xs space-y-2">
+    <div class="flex items-center gap-2 flex-wrap">
+        {% if d.order_id %}
+        <span class="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-mono">Order #{{ d.order_id }}</span>
+        {% endif %}
+    </div>
+
+    {% if d.current_item_name %}
+    <div class="text-gray-700">
+        <span class="line-through text-gray-400">{{ d.current_item_name }}</span>
+        {% if d.new_item_name %}
+        <span class="mx-1">&rarr;</span>
+        <span class="font-medium">{{ d.new_item_name }}</span>
+        {% endif %}
+        {% if d.new_quantity %}
+        <span class="text-gray-500">(qty: {{ d.new_quantity }})</span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if d.modifications %}
+    <div class="text-gray-600">
+        <span class="font-medium text-gray-500">Changes:</span> {{ d.modifications }}
+    </div>
+    {% endif %}
+
+    {% if tc.response_body %}
+    <div class="bg-gray-50 rounded px-2 py-1.5 text-gray-600">
+        {% if d.result.message %}{{ d.result.message }}{% else %}Modified{% endif %}
+    </div>
+    {% endif %}
+</div>

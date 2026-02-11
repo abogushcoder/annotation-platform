@@ -89,3 +89,5 @@ LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/login/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+ELEVENLABS_API_KEY = env('ELEVENLABS_API_KEY', default='')

@@ -48,6 +48,15 @@
             </div>
         </div>
 
+        {% if approved_count < 10 %}
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+            <p class="text-sm text-amber-800">
+                OpenAI requires at least 10 training examples for fine-tuning.
+                You currently have {{ approved_count }} approved conversation{{ approved_count|pluralize }}.
+            </p>
+        </div>
+        {% endif %}
+
         {% if approved_count > 0 %}
         <div class="bg-gray-50 rounded-lg p-3 mb-4">
             <p class="text-sm text-gray-700">
