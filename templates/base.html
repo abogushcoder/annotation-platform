@@ -6,6 +6,11 @@
     <title>{% block title %}Fine-Tuning Platform{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline-block; }
+        .htmx-request.htmx-indicator { display: inline-block; }
+    </style>
     {% block extra_head %}{% endblock %}
 </head>
 <body class="h-full" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
@@ -13,30 +18,56 @@
     <nav class="bg-indigo-600 shadow-sm">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div class="flex h-14 items-center justify-between">
-                <div class="flex items-center space-x-8">
-                    <a href="/dashboard/" class="text-white font-semibold text-lg">FT Platform</a>
-                    {% if user.is_admin %}
-                    <a href="/admin-panel/" class="text-indigo-100 hover:text-white text-sm">Dashboard</a>
-                    <a href="/admin-panel/agents/" class="text-indigo-100 hover:text-white text-sm">Agents</a>
-                    <a href="/admin-panel/assign/" class="text-indigo-100 hover:text-white text-sm">Assign</a>
-                    <a href="/admin-panel/review/" class="text-indigo-100 hover:text-white text-sm">Review</a>
-                    <a href="/admin-panel/export/" class="text-indigo-100 hover:text-white text-sm">Export</a>
-                    <a href="/admin-panel/analytics/" class="text-indigo-100 hover:text-white text-sm">Analytics</a>
-                    <a href="/admin-panel/team/" class="text-indigo-100 hover:text-white text-sm">Team</a>
-                    <a href="/admin-panel/prompts/" class="text-indigo-100 hover:text-white text-sm">Prompts</a>
-                    {% else %}
-                    <a href="/dashboard/" class="text-indigo-100 hover:text-white text-sm">My Work</a>
-                    <a href="/conversations/" class="text-indigo-100 hover:text-white text-sm">Conversations</a>
-                    {% endif %}
+                <div class="flex items-center space-x-4 lg:space-x-8">
+                    <a href="/dashboard/" class="text-white font-semibold text-lg shrink-0">FT Platform</a>
+                    <!-- Mobile menu button -->
+                    <button onclick="document.getElementById('nav-links').classList.toggle('hidden')"
+                        class="lg:hidden text-indigo-100 hover:text-white">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                        </svg>
+                    </button>
+                    <!-- Desktop nav links -->
+                    <div class="hidden lg:flex items-center space-x-6" id="nav-links-desktop">
+                        {% if user.is_admin %}
+                        <a href="/admin-panel/" class="text-indigo-100 hover:text-white text-sm">Dashboard</a>
+                        <a href="/admin-panel/agents/" class="text-indigo-100 hover:text-white text-sm">Agents</a>
+                        <a href="/admin-panel/assign/" class="text-indigo-100 hover:text-white text-sm">Assign</a>
+                        <a href="/admin-panel/review/" class="text-indigo-100 hover:text-white text-sm">Review</a>
+                        <a href="/admin-panel/export/" class="text-indigo-100 hover:text-white text-sm">Export</a>
+                        <a href="/admin-panel/analytics/" class="text-indigo-100 hover:text-white text-sm">Analytics</a>
+                        <a href="/admin-panel/team/" class="text-indigo-100 hover:text-white text-sm">Team</a>
+                        <a href="/admin-panel/prompts/" class="text-indigo-100 hover:text-white text-sm">Prompts</a>
+                        {% else %}
+                        <a href="/dashboard/" class="text-indigo-100 hover:text-white text-sm">My Work</a>
+                        <a href="/conversations/" class="text-indigo-100 hover:text-white text-sm">Conversations</a>
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="flex items-center space-x-4">
-                    <span class="text-indigo-100 text-sm">{{ user.get_full_name|default:user.username }}</span>
+                    <span class="text-indigo-100 text-sm hidden sm:inline">{{ user.get_full_name|default:user.username }}</span>
                     <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
-                        {% if user.is_admin %}bg-yellow-100 text-yellow-800{% else %}bg-indigo-100 text-indigo-800{% endif %}">
+                        {% if user.is_admin %}bg-indigo-100 text-indigo-800{% else %}bg-indigo-100 text-indigo-800{% endif %}">
                         {{ user.get_role_display }}
                     </span>
                     <a href="/logout/" class="text-indigo-200 hover:text-white text-sm">Logout</a>
                 </div>
+            </div>
+            <!-- Mobile nav menu (hidden by default) -->
+            <div class="hidden lg:hidden pb-3 space-y-1" id="nav-links">
+                {% if user.is_admin %}
+                <a href="/admin-panel/" class="block text-indigo-100 hover:text-white text-sm py-1">Dashboard</a>
+                <a href="/admin-panel/agents/" class="block text-indigo-100 hover:text-white text-sm py-1">Agents</a>
+                <a href="/admin-panel/assign/" class="block text-indigo-100 hover:text-white text-sm py-1">Assign</a>
+                <a href="/admin-panel/review/" class="block text-indigo-100 hover:text-white text-sm py-1">Review</a>
+                <a href="/admin-panel/export/" class="block text-indigo-100 hover:text-white text-sm py-1">Export</a>
+                <a href="/admin-panel/analytics/" class="block text-indigo-100 hover:text-white text-sm py-1">Analytics</a>
+                <a href="/admin-panel/team/" class="block text-indigo-100 hover:text-white text-sm py-1">Team</a>
+                <a href="/admin-panel/prompts/" class="block text-indigo-100 hover:text-white text-sm py-1">Prompts</a>
+                {% else %}
+                <a href="/dashboard/" class="block text-indigo-100 hover:text-white text-sm py-1">My Work</a>
+                <a href="/conversations/" class="block text-indigo-100 hover:text-white text-sm py-1">Conversations</a>
+                {% endif %}
             </div>
         </div>
     </nav>
@@ -45,7 +76,7 @@
     {% if messages %}
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 mt-4">
         {% for message in messages %}
-        <div class="rounded-md p-3 mb-2 {% if message.tags == 'error' %}bg-red-50 text-red-800{% elif message.tags == 'success' %}bg-green-50 text-green-800{% else %}bg-blue-50 text-blue-800{% endif %}">
+        <div class="rounded-md p-3 mb-2 {% if message.tags == 'error' %}bg-red-50 text-red-800{% elif message.tags == 'success' %}bg-green-50 text-green-800{% elif message.tags == 'warning' %}bg-yellow-50 text-yellow-800{% else %}bg-blue-50 text-blue-800{% endif %}">
             {{ message }}
         </div>
         {% endfor %}
