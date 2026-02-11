@@ -1,6 +1,61 @@
 {% extends "base.html" %}
 {% block title %}Admin Dashboard{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold text-gray-900 mb-6">Admin Dashboard</h1>
-<p class="text-gray-500">Dashboard will be built in Phase 4.</p>
+<h1 class="text-2xl font-bold text-gray-900 mb-6">Overview</h1>
+
+<div class="grid grid-cols-4 gap-4 mb-8">
+    <div class="bg-white rounded-lg shadow-sm border p-4 text-center">
+        <div class="text-3xl font-bold text-gray-900">{{ total }}</div>
+        <div class="text-sm text-gray-500">Total</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm border p-4 text-center">
+        <div class="text-3xl font-bold text-yellow-600">{{ unassigned|add:assigned|add:in_progress }}</div>
+        <div class="text-sm text-gray-500">Pending</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm border p-4 text-center">
+        <div class="text-3xl font-bold text-blue-600">{{ completed }}</div>
+        <div class="text-sm text-gray-500">Completed</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm border p-4 text-center">
+        <div class="text-3xl font-bold text-green-600">{{ approved }}</div>
+        <div class="text-sm text-gray-500">Approved</div>
+    </div>
+</div>
+
+{% if team_stats %}
+<h2 class="text-lg font-semibold text-gray-900 mb-3">Team Progress</h2>
+<div class="bg-white rounded-lg shadow-sm border p-4 mb-8">
+    {% for stat in team_stats %}
+    <div class="flex items-center space-x-4 {% if not forloop.last %}mb-3{% endif %}">
+        <span class="w-24 text-sm font-medium text-gray-700">{{ stat.user.get_full_name|default:stat.user.username }}</span>
+        <div class="flex-1 bg-gray-200 rounded-full h-4">
+            <div class="bg-indigo-600 h-4 rounded-full" style="width: {{ stat.pct }}%"></div>
+        </div>
+        <span class="text-sm text-gray-600 w-28 text-right">{{ stat.completed }}/{{ stat.total }} ({{ stat.pct }}%)</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="flex space-x-3 mb-8">
+    <a href="{% url 'agent_list' %}" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">Sync Conversations</a>
+    <a href="{% url 'assign_conversations' %}" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">Assign Batch</a>
+    <a href="{% url 'export_page' %}" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">Export JSONL</a>
+</div>
+
+{% if review_queue %}
+<h2 class="text-lg font-semibold text-gray-900 mb-3">Review Queue ({{ review_queue|length }} awaiting)</h2>
+<div class="bg-white rounded-lg shadow-sm border divide-y">
+    {% for conv in review_queue %}
+    <div class="p-3 flex items-center justify-between">
+        <div>
+            <span class="font-medium text-gray-900">Conv #{{ conv.elevenlabs_id|truncatechars:10 }}</span>
+            <span class="text-gray-500 text-sm ml-2">{{ conv.assigned_to.username }}</span>
+            <span class="text-gray-400 text-sm ml-2">{% if conv.completed_at %}Completed {{ conv.completed_at|timesince }} ago{% endif %}</span>
+        </div>
+        <a href="{% url 'review_conversation' conv.pk %}" class="px-3 py-1 bg-indigo-50 text-indigo-700 text-sm rounded hover:bg-indigo-100">Review</a>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
 {% endblock %}

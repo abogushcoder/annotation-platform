@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ action }} Agent{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto">
+    <h1 class="text-2xl font-bold text-gray-900 mb-6">{{ action }} Agent</h1>
+    <form method="post" class="bg-white rounded-lg shadow-sm border p-6 space-y-4">
+        {% csrf_token %}
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Label</label>
+            <input type="text" name="label" value="{{ agent.label|default:'' }}" required
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                placeholder="e.g. Tony's Pizzeria">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">ElevenLabs Agent ID</label>
+            <input type="text" name="agent_id" value="{{ agent.agent_id|default:'' }}" required
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                placeholder="agent_0701k...">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">ElevenLabs API Key</label>
+            <input type="password" name="api_key" value="{{ agent.elevenlabs_api_key|default:'' }}" required
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+        </div>
+        <div class="flex space-x-3">
+            <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">Save</button>
+            <a href="{% url 'agent_list' %}" class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

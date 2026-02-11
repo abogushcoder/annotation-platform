@@ -1,5 +1,23 @@
 {% extends "base.html" %}
-{% block title %}Admin{% endblock %}
+{% block title %}Review Queue{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold text-gray-900 mb-6">Placeholder</h1>
+<h1 class="text-2xl font-bold text-gray-900 mb-6">Review Queue</h1>
+
+<div class="bg-white rounded-lg shadow-sm border divide-y">
+    {% for conv in conversations %}
+    <div class="p-4 flex items-center justify-between">
+        <div>
+            <span class="font-medium text-gray-900">Conv #{{ conv.elevenlabs_id|truncatechars:12 }}</span>
+            <span class="text-sm text-gray-500 ml-2">{{ conv.agent.label }}</span>
+            <span class="text-sm text-gray-500 ml-2">by {{ conv.assigned_to.get_full_name|default:conv.assigned_to.username }}</span>
+            {% if conv.completed_at %}
+            <span class="text-sm text-gray-400 ml-2">Completed {{ conv.completed_at|timesince }} ago</span>
+            {% endif %}
+        </div>
+        <a href="{% url 'review_conversation' conv.pk %}" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">Review</a>
+    </div>
+    {% empty %}
+    <div class="p-8 text-center text-gray-500">No conversations awaiting review.</div>
+    {% endfor %}
+</div>
 {% endblock %}

@@ -1,5 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Admin{% endblock %}
+{% block title %}Agents & Sync{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold text-gray-900 mb-6">Placeholder</h1>
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Agents & Sync</h1>
+    <a href="{% url 'agent_add' %}" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">+ Add Agent</a>
+</div>
+
+<div class="space-y-4">
+    {% for agent in agents %}
+    <div class="bg-white rounded-lg shadow-sm border p-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <h3 class="font-semibold text-gray-900">{{ agent.label }}</h3>
+                <p class="text-sm text-gray-500">Agent ID: {{ agent.agent_id|truncatechars:20 }}</p>
+                <p class="text-sm text-gray-500">
+                    Conversations: {{ agent.conv_count }} imported
+                    {% if agent.last_synced_at %}| Last sync: {{ agent.last_synced_at|timesince }} ago{% endif %}
+                </p>
+            </div>
+            <div class="flex space-x-2">
+                <form method="post" action="{% url 'agent_sync' agent.pk %}" class="inline">
+                    {% csrf_token %}
+                    <button type="submit" class="px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700">Sync Now</button>
+                </form>
+                <a href="{% url 'agent_edit' agent.pk %}" class="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200">Edit</a>
+                <form method="post" action="{% url 'agent_delete' agent.pk %}" class="inline" onsubmit="return confirm('Delete this agent?')">
+                    {% csrf_token %}
+                    <button type="submit" class="px-3 py-1.5 bg-red-50 text-red-700 text-sm rounded hover:bg-red-100">Remove</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="text-center py-12 text-gray-500">No agents configured. Add one to start syncing conversations.</div>
+    {% endfor %}
+</div>
 {% endblock %}

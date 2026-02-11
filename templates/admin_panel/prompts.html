@@ -1,5 +1,36 @@
 {% extends "base.html" %}
-{% block title %}Admin{% endblock %}
+{% block title %}System Prompts{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold text-gray-900 mb-6">Placeholder</h1>
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">System Prompts</h1>
+    <a href="{% url 'prompt_add' %}" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">+ Create New Version</a>
+</div>
+
+<div class="space-y-4">
+    {% for prompt in prompts %}
+    <div class="bg-white rounded-lg shadow-sm border p-4 {% if prompt.is_active %}ring-2 ring-green-500{% endif %}">
+        <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+                <h3 class="font-semibold text-gray-900">{{ prompt.name }}</h3>
+                {% if prompt.is_active %}
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800">Active</span>
+                {% endif %}
+            </div>
+            <span class="text-sm text-gray-400">{{ prompt.created_at|date:"M d, Y" }}</span>
+        </div>
+        <p class="text-sm text-gray-600 whitespace-pre-wrap line-clamp-3">{{ prompt.content|truncatewords:50 }}</p>
+        <div class="flex space-x-2 mt-3">
+            <a href="{% url 'prompt_edit' prompt.pk %}" class="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200">Edit</a>
+            {% if not prompt.is_active %}
+            <form method="post" action="{% url 'prompt_activate' prompt.pk %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="px-3 py-1 bg-green-50 text-green-700 text-sm rounded hover:bg-green-100">Set Active</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% empty %}
+    <div class="text-center py-12 text-gray-500">No system prompts created yet.</div>
+    {% endfor %}
+</div>
 {% endblock %}

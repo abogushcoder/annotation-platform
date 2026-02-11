@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load conversation_tags %}
+{% block title %}Review Conv #{{ conversation.elevenlabs_id|truncatechars:10 }}{% endblock %}
+{% block content %}
+<div class="mb-4 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+        <a href="{% url 'review_queue' %}" class="text-indigo-600 hover:text-indigo-800 text-sm">&larr; Back to Queue</a>
+        <h1 class="text-xl font-bold text-gray-900">Review: Conv #{{ conversation.elevenlabs_id|truncatechars:16 }}</h1>
+        <span class="text-gray-500 text-sm">({{ conversation.agent.label }})</span>
+    </div>
+    <span class="text-sm text-gray-500">Annotator: {{ conversation.assigned_to.get_full_name|default:conversation.assigned_to.username }}</span>
+</div>
+
+{% if conversation.annotator_notes %}
+<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+    <h3 class="text-sm font-medium text-blue-800 mb-1">Annotator Notes</h3>
+    <p class="text-sm text-blue-700">{{ conversation.annotator_notes }}</p>
+</div>
+{% endif %}
+
+<div class="space-y-0 mb-6">
+    {% for turn in turns %}
+    <div class="flex {% if turn.role == 'agent' %}justify-end{% else %}justify-start{% endif %} py-2">
+        <div class="max-w-[75%] {% if turn.role == 'agent' %}bg-blue-50 border-blue-200{% else %}bg-gray-50 border-gray-200{% endif %} border rounded-lg p-3">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-medium {% if turn.role == 'agent' %}text-blue-700{% else %}text-gray-700{% endif %}">
+                    {% if turn.role == 'agent' %}Restaurant AI{% else %}Customer{% endif %}
+                </span>
+                <span class="text-xs text-gray-400">{{ turn.time_in_call_secs|floatformat:1 }}s</span>
+            </div>
+
+            {% if turn.is_edited %}
+            <p class="text-sm text-gray-400 line-through mb-1">{{ turn.original_text }}</p>
+            <p class="text-sm text-gray-900 bg-yellow-50 px-1 rounded">{{ turn.edited_text }}</p>
+            <span class="text-xs text-green-600">Edited</span>
+            {% else %}
+            <p class="text-sm text-gray-900">{{ turn.original_text }}</p>
+            {% endif %}
+
+            {% for tc in turn.tool_calls.all %}
+            <div class="bg-white border border-gray-300 rounded-lg p-3 mt-2">
+                <span class="text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded">{{ tc.tool_name }}</span>
+                {% if tc.is_edited %}
+                <span class="text-xs text-green-600 ml-2">Args Edited</span>
+                {% endif %}
+                <div class="text-xs space-y-1 mt-2">
+                    {% for key, value in tc.display_args.items %}
+                    <div class="flex"><span class="font-medium text-gray-600 w-32">{{ key }}:</span><span class="text-gray-900">{{ value }}</span></div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="flex items-center space-x-3">
+    <form method="post" action="{% url 'approve_conversation' conversation.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="px-6 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700">Approve</button>
+    </form>
+    <form method="post" action="{% url 'reject_conversation' conversation.pk %}" class="flex items-center space-x-2">
+        {% csrf_token %}
+        <input type="text" name="reviewer_notes" placeholder="Feedback for annotator..."
+            class="rounded-md border border-gray-300 px-3 py-2 text-sm w-64 focus:border-red-500 focus:outline-none">
+        <button type="submit" class="px-6 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700">Reject</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,126 +1,342 @@
+import json
+import logging
+from functools import wraps
+
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse
-from django.shortcuts import render, redirect
+from django.db.models import Count, Q, Avg, F
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render, redirect, get_object_or_404
+from django.utils import timezone
+
+from accounts.models import User
+from conversations.models import Agent, Conversation, Turn, ToolCall, SystemPrompt
+
+logger = logging.getLogger(__name__)
 
 
 def admin_required(view_func):
+    @wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated or not request.user.is_admin():
-            return HttpResponse("Permission denied", status=403)
+            return render(request, 'admin_panel/403.html', status=403)
         return view_func(request, *args, **kwargs)
     return wrapper
 
 
+# ---- Dashboard ----
+
 @admin_required
 def admin_dashboard(request):
-    return render(request, 'admin_panel/dashboard.html')
+    total = Conversation.objects.count()
+    unassigned = Conversation.objects.filter(status='unassigned').count()
+    assigned = Conversation.objects.filter(status='assigned').count()
+    in_progress = Conversation.objects.filter(status='in_progress').count()
+    completed = Conversation.objects.filter(status='completed').count()
+    approved = Conversation.objects.filter(status='approved').count()
+    flagged = Conversation.objects.filter(status='flagged').count()
 
+    # Per-annotator stats
+    annotators = User.objects.filter(role='annotator', is_active=True)
+    team_stats = []
+    for ann in annotators:
+        ann_total = Conversation.objects.filter(assigned_to=ann).count()
+        ann_completed = Conversation.objects.filter(
+            assigned_to=ann, status__in=['completed', 'approved']
+        ).count()
+        pct = int((ann_completed / ann_total * 100)) if ann_total > 0 else 0
+        team_stats.append({
+            'user': ann,
+            'total': ann_total,
+            'completed': ann_completed,
+            'pct': pct,
+        })
+
+    review_queue = Conversation.objects.filter(status='completed').select_related(
+        'assigned_to', 'agent'
+    ).order_by('-completed_at')[:10]
+
+    return render(request, 'admin_panel/dashboard.html', {
+        'total': total, 'unassigned': unassigned, 'assigned': assigned,
+        'in_progress': in_progress, 'completed': completed,
+        'approved': approved, 'flagged': flagged,
+        'team_stats': team_stats, 'review_queue': review_queue,
+    })
+
+
+# ---- Agent Management ----
 
 @admin_required
 def agent_list(request):
-    return render(request, 'admin_panel/agents.html')
+    agents = Agent.objects.annotate(conv_count=Count('conversations')).all()
+    return render(request, 'admin_panel/agents.html', {'agents': agents})
 
 
 @admin_required
 def agent_add(request):
-    return render(request, 'admin_panel/agents.html')
+    if request.method == 'POST':
+        Agent.objects.create(
+            agent_id=request.POST['agent_id'],
+            label=request.POST['label'],
+            elevenlabs_api_key=request.POST['api_key'],
+        )
+        messages.success(request, 'Agent added successfully.')
+        return redirect('agent_list')
+    return render(request, 'admin_panel/agent_form.html', {'action': 'Add'})
 
 
 @admin_required
 def agent_edit(request, pk):
-    return render(request, 'admin_panel/agents.html')
+    agent = get_object_or_404(Agent, pk=pk)
+    if request.method == 'POST':
+        agent.agent_id = request.POST['agent_id']
+        agent.label = request.POST['label']
+        agent.elevenlabs_api_key = request.POST['api_key']
+        agent.save()
+        messages.success(request, 'Agent updated.')
+        return redirect('agent_list')
+    return render(request, 'admin_panel/agent_form.html', {'action': 'Edit', 'agent': agent})
 
 
 @admin_required
 def agent_delete(request, pk):
+    agent = get_object_or_404(Agent, pk=pk)
+    if request.method == 'POST':
+        agent.delete()
+        messages.success(request, 'Agent deleted.')
     return redirect('agent_list')
 
 
 @admin_required
 def agent_sync(request, pk):
+    agent = get_object_or_404(Agent, pk=pk)
+    if request.method == 'POST':
+        from conversations.services.sync import sync_agent_conversations
+        try:
+            stats = sync_agent_conversations(agent)
+            messages.success(
+                request,
+                f"Sync complete: {stats['imported']} imported, "
+                f"{stats['skipped']} skipped, {stats['errors']} errors."
+            )
+        except Exception as e:
+            messages.error(request, f"Sync failed: {e}")
     return redirect('agent_list')
 
 
+# ---- Assignment ----
+
 @admin_required
 def assign_conversations(request):
-    return render(request, 'admin_panel/assign.html')
+    if request.method == 'POST':
+        conv_ids = request.POST.getlist('conversation_ids')
+        assignee_id = request.POST.get('assignee')
+        if conv_ids and assignee_id:
+            assignee = get_object_or_404(User, pk=assignee_id)
+            updated = Conversation.objects.filter(
+                pk__in=conv_ids, status='unassigned'
+            ).update(status='assigned', assigned_to=assignee)
+            messages.success(request, f'{updated} conversations assigned to {assignee.username}.')
+        return redirect('assign_conversations')
+
+    agent_filter = request.GET.get('agent')
+    status_filter = request.GET.get('status', 'unassigned')
+
+    conversations = Conversation.objects.select_related('agent', 'assigned_to')
+    if status_filter:
+        conversations = conversations.filter(status=status_filter)
+    if agent_filter:
+        conversations = conversations.filter(agent_id=agent_filter)
+
+    agents = Agent.objects.all()
+    annotators = User.objects.filter(role='annotator', is_active=True)
+
+    return render(request, 'admin_panel/assign.html', {
+        'conversations': conversations,
+        'agents': agents,
+        'annotators': annotators,
+        'status_filter': status_filter,
+        'agent_filter': agent_filter,
+    })
 
 
 @admin_required
 def auto_distribute(request):
+    if request.method == 'POST':
+        annotators = list(User.objects.filter(role='annotator', is_active=True))
+        if not annotators:
+            messages.error(request, 'No active annotators.')
+            return redirect('assign_conversations')
+
+        unassigned = list(Conversation.objects.filter(status='unassigned'))
+        for i, conv in enumerate(unassigned):
+            conv.assigned_to = annotators[i % len(annotators)]
+            conv.status = 'assigned'
+            conv.save()
+
+        messages.success(request, f'{len(unassigned)} conversations distributed.')
     return redirect('assign_conversations')
 
 
+# ---- Review ----
+
 @admin_required
 def review_queue(request):
-    return render(request, 'admin_panel/review.html')
+    conversations = Conversation.objects.filter(
+        status='completed'
+    ).select_related('assigned_to', 'agent').order_by('-completed_at')
+
+    return render(request, 'admin_panel/review.html', {
+        'conversations': conversations,
+    })
 
 
 @admin_required
 def review_conversation(request, pk):
-    return render(request, 'admin_panel/review.html')
+    conversation = get_object_or_404(Conversation, pk=pk)
+    turns = conversation.turns.prefetch_related('tool_calls').all()
+
+    return render(request, 'admin_panel/review_detail.html', {
+        'conversation': conversation,
+        'turns': turns,
+    })
 
 
 @admin_required
 def approve_conversation(request, pk):
+    conversation = get_object_or_404(Conversation, pk=pk)
+    if request.method == 'POST':
+        conversation.status = 'approved'
+        conversation.reviewed_at = timezone.now()
+        conversation.save()
+        messages.success(request, f'Conversation {conversation.elevenlabs_id} approved.')
     return redirect('review_queue')
 
 
 @admin_required
 def reject_conversation(request, pk):
+    conversation = get_object_or_404(Conversation, pk=pk)
+    if request.method == 'POST':
+        conversation.status = 'assigned'
+        conversation.reviewer_notes = request.POST.get('reviewer_notes', '')
+        conversation.reviewed_at = timezone.now()
+        conversation.completed_at = None
+        conversation.save()
+        messages.success(request, f'Conversation {conversation.elevenlabs_id} rejected.')
     return redirect('review_queue')
 
 
+# ---- Export ----
+
 @admin_required
 def export_page(request):
-    return render(request, 'admin_panel/export.html')
+    agents = Agent.objects.all()
+    approved_count = Conversation.objects.filter(status='approved').count()
+    active_prompt = SystemPrompt.objects.filter(is_active=True).first()
+
+    return render(request, 'admin_panel/export.html', {
+        'agents': agents,
+        'approved_count': approved_count,
+        'active_prompt': active_prompt,
+    })
 
 
 @admin_required
 def export_preview(request):
-    return HttpResponse('{}')
+    from conversations.services.export import generate_jsonl_examples
+    examples = generate_jsonl_examples(limit=3)
+    return JsonResponse({'examples': examples})
 
 
 @admin_required
 def export_download(request):
-    return HttpResponse('{}')
+    return HttpResponse('Not yet implemented', status=501)
 
+
+# ---- Analytics ----
 
 @admin_required
 def analytics_page(request):
     return render(request, 'admin_panel/analytics.html')
 
 
+# ---- Team ----
+
 @admin_required
 def team_management(request):
-    return render(request, 'admin_panel/team.html')
+    members = User.objects.filter(role='annotator').order_by('-is_active', 'username')
+    return render(request, 'admin_panel/team.html', {'members': members})
 
 
 @admin_required
 def team_invite(request):
-    return render(request, 'admin_panel/team.html')
+    if request.method == 'POST':
+        username = request.POST['username']
+        email = request.POST.get('email', '')
+        password = request.POST['password']
+        first_name = request.POST.get('first_name', '')
+        last_name = request.POST.get('last_name', '')
+
+        user = User.objects.create_user(
+            username=username, email=email, password=password,
+            first_name=first_name, last_name=last_name,
+            role='annotator',
+        )
+        messages.success(request, f'Invited {username} as annotator.')
+        return redirect('team_management')
+    return render(request, 'admin_panel/team_invite.html')
 
 
 @admin_required
 def team_toggle_active(request, pk):
+    user = get_object_or_404(User, pk=pk)
+    if request.method == 'POST':
+        user.is_active = not user.is_active
+        user.save()
+        status = 'activated' if user.is_active else 'deactivated'
+        messages.success(request, f'{user.username} {status}.')
     return redirect('team_management')
 
 
+# ---- System Prompts ----
+
 @admin_required
 def prompt_management(request):
-    return render(request, 'admin_panel/prompts.html')
+    prompts = SystemPrompt.objects.order_by('-is_active', '-created_at')
+    return render(request, 'admin_panel/prompts.html', {'prompts': prompts})
 
 
 @admin_required
 def prompt_add(request):
-    return render(request, 'admin_panel/prompts.html')
+    if request.method == 'POST':
+        SystemPrompt.objects.create(
+            name=request.POST['name'],
+            content=request.POST['content'],
+            is_active=request.POST.get('is_active') == 'on',
+        )
+        messages.success(request, 'Prompt created.')
+        return redirect('prompt_management')
+    return render(request, 'admin_panel/prompt_form.html', {'action': 'Create'})
 
 
 @admin_required
 def prompt_edit(request, pk):
-    return render(request, 'admin_panel/prompts.html')
+    prompt = get_object_or_404(SystemPrompt, pk=pk)
+    if request.method == 'POST':
+        prompt.name = request.POST['name']
+        prompt.content = request.POST['content']
+        prompt.is_active = request.POST.get('is_active') == 'on'
+        prompt.save()
+        messages.success(request, 'Prompt updated.')
+        return redirect('prompt_management')
+    return render(request, 'admin_panel/prompt_form.html', {'action': 'Edit', 'prompt': prompt})
 
 
 @admin_required
 def prompt_activate(request, pk):
+    prompt = get_object_or_404(SystemPrompt, pk=pk)
+    if request.method == 'POST':
+        prompt.is_active = True
+        prompt.save()
+        messages.success(request, f'"{prompt.name}" is now active.')
     return redirect('prompt_management')

@@ -1,5 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Admin{% endblock %}
+{% block title %}Team Management{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold text-gray-900 mb-6">Placeholder</h1>
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Team Management</h1>
+    <a href="{% url 'team_invite' %}" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">+ Invite Member</a>
+</div>
+
+<div class="bg-white rounded-lg shadow-sm border divide-y">
+    {% for member in members %}
+    <div class="p-4 flex items-center justify-between">
+        <div>
+            <span class="font-medium text-gray-900">{{ member.get_full_name|default:member.username }}</span>
+            <span class="text-sm text-gray-500 ml-2">{{ member.email }}</span>
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ml-2
+                {% if member.is_active %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                {% if member.is_active %}Active{% else %}Inactive{% endif %}
+            </span>
+        </div>
+        <form method="post" action="{% url 'team_toggle_active' member.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="px-3 py-1.5 text-sm rounded
+                {% if member.is_active %}bg-red-50 text-red-700 hover:bg-red-100{% else %}bg-green-50 text-green-700 hover:bg-green-100{% endif %}">
+                {% if member.is_active %}Deactivate{% else %}Activate{% endif %}
+            </button>
+        </form>
+    </div>
+    {% empty %}
+    <div class="p-8 text-center text-gray-500">No team members yet.</div>
+    {% endfor %}
+</div>
 {% endblock %}
