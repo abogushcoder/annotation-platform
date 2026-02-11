@@ -1,5 +1,117 @@
 {% extends "base.html" %}
-{% block title %}Admin{% endblock %}
+{% block title %}Analytics{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold text-gray-900 mb-6">Placeholder</h1>
+<h1 class="text-2xl font-bold text-gray-900 mb-6">Analytics</h1>
+
+<!-- Pipeline Funnel -->
+<h2 class="text-lg font-semibold text-gray-900 mb-3">Pipeline</h2>
+<div class="bg-white rounded-lg shadow-sm border p-4 mb-8">
+    <div class="flex items-center space-x-2">
+        {% with stages="unassigned,assigned,in_progress,completed,approved" %}
+        {% for stage in stages.split %}
+        <div class="flex-1 text-center">
+            <div class="text-2xl font-bold
+                {% if stage == 'unassigned' %}text-gray-600
+                {% elif stage == 'assigned' %}text-blue-600
+                {% elif stage == 'in_progress' %}text-yellow-600
+                {% elif stage == 'completed' %}text-orange-600
+                {% elif stage == 'approved' %}text-green-600
+                {% endif %}">
+                {% if stage == 'unassigned' %}{{ pipeline.unassigned }}
+                {% elif stage == 'assigned' %}{{ pipeline.assigned }}
+                {% elif stage == 'in_progress' %}{{ pipeline.in_progress }}
+                {% elif stage == 'completed' %}{{ pipeline.completed }}
+                {% elif stage == 'approved' %}{{ pipeline.approved }}
+                {% endif %}
+            </div>
+            <div class="text-xs text-gray-500 mt-1">
+                {% if stage == 'in_progress' %}In Progress{% else %}{{ stage|title }}{% endif %}
+            </div>
+        </div>
+        {% if not forloop.last %}
+        <div class="text-gray-300 text-lg">&rarr;</div>
+        {% endif %}
+        {% endfor %}
+        {% endwith %}
+    </div>
+    {% if pipeline.flagged > 0 %}
+    <div class="mt-2 text-center text-sm text-red-600">+ {{ pipeline.flagged }} flagged</div>
+    {% endif %}
+</div>
+
+<!-- Overall Stats -->
+<div class="grid grid-cols-3 gap-4 mb-8">
+    <div class="bg-white rounded-lg shadow-sm border p-4 text-center">
+        <div class="text-2xl font-bold text-gray-900">{{ pipeline.total }}</div>
+        <div class="text-sm text-gray-500">Total Conversations</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm border p-4 text-center">
+        <div class="text-2xl font-bold text-indigo-600">{{ overall_edit_rate }}%</div>
+        <div class="text-sm text-gray-500">Turn Edit Rate</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm border p-4 text-center">
+        <div class="text-2xl font-bold text-indigo-600">{{ overall_tc_edit_rate }}%</div>
+        <div class="text-sm text-gray-500">Tool Call Edit Rate</div>
+    </div>
+</div>
+
+<!-- Per-Annotator Metrics -->
+{% if annotator_metrics %}
+<h2 class="text-lg font-semibold text-gray-900 mb-3">Per-Annotator Metrics</h2>
+<div class="bg-white rounded-lg shadow-sm border overflow-hidden mb-8">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Annotator</th>
+                <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Assigned</th>
+                <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Completed</th>
+                <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Completion %</th>
+                <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Edit Rate</th>
+                <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">TC Edit Rate</th>
+                <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Rejection %</th>
+                <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Flag %</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            {% for m in annotator_metrics %}
+            <tr>
+                <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ m.user.get_full_name|default:m.user.username }}</td>
+                <td class="px-4 py-3 text-sm text-gray-600 text-center">{{ m.total_assigned }}</td>
+                <td class="px-4 py-3 text-sm text-gray-600 text-center">{{ m.completed }}</td>
+                <td class="px-4 py-3 text-center">
+                    <div class="flex items-center justify-center space-x-2">
+                        <div class="w-16 bg-gray-200 rounded-full h-2">
+                            <div class="bg-indigo-600 h-2 rounded-full" style="width: {{ m.completion_rate }}%"></div>
+                        </div>
+                        <span class="text-sm text-gray-600">{{ m.completion_rate }}%</span>
+                    </div>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-600 text-center">{{ m.edit_rate }}%</td>
+                <td class="px-4 py-3 text-sm text-gray-600 text-center">{{ m.tc_edit_rate }}%</td>
+                <td class="px-4 py-3 text-sm text-gray-600 text-center">{{ m.rejection_rate }}%</td>
+                <td class="px-4 py-3 text-sm text-gray-600 text-center">{{ m.flag_rate }}%</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Export History -->
+{% if export_history %}
+<h2 class="text-lg font-semibold text-gray-900 mb-3">Export History</h2>
+<div class="bg-white rounded-lg shadow-sm border divide-y">
+    {% for log in export_history %}
+    <div class="p-3 flex items-center justify-between">
+        <div>
+            <span class="text-sm font-medium text-gray-900">{{ log.created_at|date:"M d, Y H:i" }}</span>
+            <span class="text-sm text-gray-500 ml-2">by {{ log.exported_by.username|default:"Unknown" }}</span>
+        </div>
+        <div class="text-sm text-gray-600">
+            {{ log.conversation_count }} conversations | ~{{ log.token_count }} tokens
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
 {% endblock %}

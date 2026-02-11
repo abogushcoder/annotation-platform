@@ -329,7 +329,80 @@ def export_download(request):
 
 @admin_required
 def analytics_page(request):
-    return render(request, 'admin_panel/analytics.html')
+    from django.db.models import Count, Q, Avg
+
+    annotators = User.objects.filter(role='annotator', is_active=True)
+
+    # Per-annotator metrics
+    annotator_metrics = []
+    for ann in annotators:
+        total_assigned = Conversation.objects.filter(assigned_to=ann).count()
+        completed = Conversation.objects.filter(
+            assigned_to=ann, status__in=['completed', 'approved']
+        ).count()
+        approved = Conversation.objects.filter(assigned_to=ann, status='approved').count()
+        rejected = Conversation.objects.filter(
+            assigned_to=ann, reviewer_notes__gt=''
+        ).count()
+        flagged = Conversation.objects.filter(assigned_to=ann, status='flagged').count()
+
+        completion_rate = int(completed / total_assigned * 100) if total_assigned > 0 else 0
+        rejection_rate = int(rejected / completed * 100) if completed > 0 else 0
+        flag_rate = int(flagged / total_assigned * 100) if total_assigned > 0 else 0
+
+        # Edit rates
+        ann_turns = Turn.objects.filter(conversation__assigned_to=ann)
+        total_turns = ann_turns.count()
+        edited_turns = ann_turns.filter(is_edited=True).count()
+        edit_rate = int(edited_turns / total_turns * 100) if total_turns > 0 else 0
+
+        ann_tc = ToolCall.objects.filter(turn__conversation__assigned_to=ann)
+        total_tc = ann_tc.count()
+        edited_tc = ann_tc.filter(is_edited=True).count()
+        tc_edit_rate = int(edited_tc / total_tc * 100) if total_tc > 0 else 0
+
+        annotator_metrics.append({
+            'user': ann,
+            'total_assigned': total_assigned,
+            'completed': completed,
+            'approved': approved,
+            'completion_rate': completion_rate,
+            'rejection_rate': rejection_rate,
+            'flag_rate': flag_rate,
+            'edit_rate': edit_rate,
+            'tc_edit_rate': tc_edit_rate,
+        })
+
+    # Pipeline funnel
+    pipeline = {
+        'unassigned': Conversation.objects.filter(status='unassigned').count(),
+        'assigned': Conversation.objects.filter(status='assigned').count(),
+        'in_progress': Conversation.objects.filter(status='in_progress').count(),
+        'completed': Conversation.objects.filter(status='completed').count(),
+        'approved': Conversation.objects.filter(status='approved').count(),
+        'flagged': Conversation.objects.filter(status='flagged').count(),
+    }
+    pipeline['total'] = sum(pipeline.values())
+
+    # Export history
+    export_history = ExportLog.objects.select_related('exported_by')[:10]
+
+    # Overall edit rates
+    total_turns = Turn.objects.count()
+    total_edited_turns = Turn.objects.filter(is_edited=True).count()
+    overall_edit_rate = int(total_edited_turns / total_turns * 100) if total_turns > 0 else 0
+
+    total_tc = ToolCall.objects.count()
+    total_edited_tc = ToolCall.objects.filter(is_edited=True).count()
+    overall_tc_edit_rate = int(total_edited_tc / total_tc * 100) if total_tc > 0 else 0
+
+    return render(request, 'admin_panel/analytics.html', {
+        'annotator_metrics': annotator_metrics,
+        'pipeline': pipeline,
+        'export_history': export_history,
+        'overall_edit_rate': overall_edit_rate,
+        'overall_tc_edit_rate': overall_tc_edit_rate,
+    })
 
 
 # ---- Team ----
