@@ -48,6 +48,16 @@
             </div>
         </div>
 
+        {% if approved_count > 0 %}
+        <div class="bg-gray-50 rounded-lg p-3 mb-4">
+            <p class="text-sm text-gray-700">
+                Preview: {{ approved_count }} conversations
+                {% if token_count %}| Estimated tokens: ~{{ token_count|floatformat:0 }}{% endif %}
+                {% if estimated_cost %}| Estimated cost (gpt-4o, 3 epochs): ~${{ estimated_cost }}{% endif %}
+            </p>
+        </div>
+        {% endif %}
+
         <div class="flex space-x-3">
             <button type="button" hx-get="{% url 'export_preview' %}" hx-target="#preview-area" hx-swap="innerHTML"
                 class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200">Preview First 3 Examples</button>

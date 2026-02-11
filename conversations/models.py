@@ -108,3 +108,18 @@ class SystemPrompt(models.Model):
         if self.is_active:
             SystemPrompt.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
         super().save(*args, **kwargs)
+
+
+class ExportLog(models.Model):
+    exported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True
+    )
+    conversation_count = models.IntegerField(default=0)
+    token_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Export {self.created_at.strftime('%Y-%m-%d %H:%M')} ({self.conversation_count} convs)"

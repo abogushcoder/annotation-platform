@@ -10,7 +10,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 
 from accounts.models import User
-from conversations.models import Agent, Conversation, Turn, ToolCall, SystemPrompt
+from conversations.models import Agent, Conversation, Turn, ToolCall, SystemPrompt, ExportLog
 
 logger = logging.getLogger(__name__)
 
@@ -230,27 +230,99 @@ def reject_conversation(request, pk):
 
 @admin_required
 def export_page(request):
+    from conversations.services.export import generate_jsonl_examples, count_tokens, estimate_training_cost
+
     agents = Agent.objects.all()
     approved_count = Conversation.objects.filter(status='approved').count()
     active_prompt = SystemPrompt.objects.filter(is_active=True).first()
+
+    # Pre-calculate token estimate
+    token_count = 0
+    estimated_cost = 0
+    if approved_count > 0:
+        examples = generate_jsonl_examples()
+        token_count = count_tokens(examples)
+        estimated_cost = estimate_training_cost(token_count)
 
     return render(request, 'admin_panel/export.html', {
         'agents': agents,
         'approved_count': approved_count,
         'active_prompt': active_prompt,
+        'token_count': token_count,
+        'estimated_cost': estimated_cost,
     })
 
 
 @admin_required
 def export_preview(request):
     from conversations.services.export import generate_jsonl_examples
+    import json
     examples = generate_jsonl_examples(limit=3)
-    return JsonResponse({'examples': examples})
+    formatted = [json.dumps(ex, indent=2) for ex in examples]
+    html = ""
+    for i, f in enumerate(formatted):
+        html += f'<div class="mb-4"><h4 class="text-sm font-semibold text-gray-700 mb-1">Example {i+1}</h4>'
+        html += f'<pre class="bg-gray-900 text-green-400 text-xs p-3 rounded overflow-x-auto max-h-64">{f}</pre></div>'
+    if not formatted:
+        html = '<p class="text-gray-500 text-sm">No approved conversations to preview.</p>'
+    return HttpResponse(html)
 
 
 @admin_required
 def export_download(request):
-    return HttpResponse('Not yet implemented', status=501)
+    from conversations.services.export import (
+        generate_jsonl_examples, export_jsonl, split_train_validation,
+        count_tokens, estimate_training_cost
+    )
+    import zipfile
+    import io
+    from datetime import date
+
+    filter_type = request.GET.get('filter', 'all')
+    agent_id = request.GET.get('agent_id')
+    include_system = 'include_system_prompt' in request.GET
+    include_tools = 'include_tools' in request.GET
+    split = 'split' in request.GET
+    tool_calls_only = 'tool_calls_only' in request.GET
+
+    kwargs = {
+        'include_system_prompt': include_system,
+        'include_tools': include_tools,
+        'tool_calls_only': tool_calls_only,
+    }
+    if filter_type == 'agent' and agent_id:
+        kwargs['agent_id'] = agent_id
+
+    examples = generate_jsonl_examples(**kwargs)
+
+    if not examples:
+        messages.warning(request, 'No valid examples to export.')
+        return redirect('export_page')
+
+    today = date.today().isoformat()
+
+    if split:
+        train, val = split_train_validation(examples)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f'training_data_{today}.jsonl', export_jsonl(train))
+            zf.writestr(f'validation_data_{today}.jsonl', export_jsonl(val))
+        buf.seek(0)
+        response = HttpResponse(buf.read(), content_type='application/zip')
+        response['Content-Disposition'] = f'attachment; filename="training_data_{today}.zip"'
+    else:
+        jsonl_content = export_jsonl(examples)
+        response = HttpResponse(jsonl_content, content_type='application/jsonl')
+        response['Content-Disposition'] = f'attachment; filename="training_data_{today}.jsonl"'
+
+    # Log export
+    ExportLog.objects.create(
+        exported_by=request.user,
+        conversation_count=len(examples),
+        token_count=count_tokens(examples),
+    )
+
+    return response
 
 
 # ---- Analytics ----
