@@ -1,133 +1,167 @@
-You are building a Fine-Tuning Annotation Platform — a standalone Django web application.
+You are extensively testing a Fine-Tuning Annotation Platform — a standalone Django web application that was already built.
 
 TARGET DIRECTORY: /home/riba/Desktop/x1-and-prototypes/annotation-platform/
 SPEC DOCUMENT: /home/riba/Desktop/x1-and-prototypes/x1-suite-restaurant/docs/fine-tuning-annotation-platform-spec.md
 
-Read the spec document at the start of EVERY iteration to stay aligned.
+Read the spec document at the start of EVERY iteration to stay aligned with requirements.
 
 TECH STACK:
-- Django 5.x + Python 3.12 (pyenv)
-- PostgreSQL 16 (Docker on port 5434)
+- Django 6.0.2 + Python 3.13.1 (pyenv)
+- PostgreSQL 16 (Docker on port 5434, already running)
 - HTMX + Tailwind CSS (CDN, no build step)
-- boto3 for S3 audio storage
 - tiktoken for token counting
+- Django dev server on port 8000
+
+TEST ACCOUNTS:
+- Admin: username=admin, password=admin (role=admin)
+- Annotator: username=sarah, password=annotator (role=annotator)
 
 IMPORTANT RULES:
 - Work in /home/riba/Desktop/x1-and-prototypes/annotation-platform/
-- Use python3 from pyenv (Python 3.13.1)
-- Use docker-compose for PostgreSQL on port 5434
-- Use Django's built-in dev server on port 8000
-- Use Tailwind via CDN link (no npm/node build step)
-- Use HTMX via CDN link
-- Commit after completing each phase with a descriptive message
-- Run Django tests after each phase to verify
-- If tests fail, fix them before moving to the next phase
+- Activate venv: source .venv/bin/activate
+- Run tests: python manage.py test --verbosity=2
+- Start dev server: python manage.py runserver (for UI testing)
+- Fix ALL issues you find before moving to the next phase
+- Commit after each testing phase with a descriptive message
+- Do NOT skip the security auditor — it was explicitly excluded by the user
 
-## BUILD PHASES — Complete ALL before outputting the promise
+## TESTING PHASES — Complete ALL before outputting the promise
 
-### Phase 1: Foundation (Core CRUD)
-- [ ] Create project directory at /home/riba/Desktop/x1-and-prototypes/annotation-platform/
-- [ ] Create and activate Python virtual environment (.venv)
-- [ ] Install Django 5.x, psycopg2-binary, django-htmx, django-environ, boto3, tiktoken, gunicorn, whitenoise
-- [ ] Create docker-compose.yml with PostgreSQL 16 on port 5434
-- [ ] Start the PostgreSQL container and verify connection
-- [ ] Run django-admin startproject config .
-- [ ] Configure settings.py: database (port 5434), installed apps, templates, static files, auth user model
-- [ ] Create .env file with DATABASE_URL, SECRET_KEY, DEBUG=True
-- [ ] Create 'accounts' app with custom User model (AbstractUser + role field: admin/annotator)
-- [ ] Create 'conversations' app with models: Agent, Conversation (7 statuses), Turn, ToolCall, SystemPrompt
-- [ ] Run makemigrations and migrate
-- [ ] Create superuser (admin@example.com / admin)
-- [ ] Implement login/logout views with styled templates
-- [ ] Create base.html template with Tailwind CDN, HTMX CDN, navigation bar
-- [ ] Verify: Django dev server starts, login works, admin panel accessible
-- [ ] Git commit: "Phase 1: Foundation - Django project with models and auth"
+### Phase 1: Comprehensive Unit Testing (test-writer)
 
-### Phase 2: ElevenLabs Sync
-- [ ] Create conversations/services/elevenlabs.py — ElevenLabsClient class (list_conversations, get_conversation, get_conversation_audio)
-- [ ] Create conversations/services/sync.py — sync logic (fetch conversations, parse transcript into Turn + ToolCall records, handle pagination with cursor)
-- [ ] Create conversations/services/audio.py — S3 upload stub (just store audio_s3_key, presigned URL generation placeholder)
-- [ ] Create admin_panel app
-- [ ] Build Agent management page (admin only): list agents, add agent (agent_id, label, api_key), edit, remove
-- [ ] Build Sync page: show agents with last sync time, "Sync Now" button per agent
-- [ ] Sync endpoint: POST triggers sync for an agent, creates Conversation + Turn + ToolCall records
-- [ ] Handle deduplication: skip conversations already imported (by elevenlabs_id)
-- [ ] Store raw_data JSON on Conversation model
-- [ ] Verify: Can add an agent and trigger sync (with mock data or real API if key available)
-- [ ] Git commit: "Phase 2: ElevenLabs sync - agent management and conversation import"
+Spawn the **test-writer** agent to generate comprehensive tests for the annotation platform. The test-writer should cover:
 
-### Phase 3: Annotator UI
-- [ ] Build annotator dashboard: show assigned/in-progress/completed counts, list of conversations
-- [ ] Build conversation editor page (core screen): chat-style display with turns
-- [ ] Display turns: agent messages right-aligned (blue), customer messages left-aligned (gray)
-- [ ] Show tool call cards inline: friendly display with tool_name header, key-value fields, result status
-- [ ] Inline turn editing via HTMX: click Edit -> expand textarea with original + editable text, Save/Cancel
-- [ ] Tool call editing via HTMX: "Edit Tool Call" opens form with friendly field names per tool_name
-- [ ] Implement tool call forms for all 8 tools: create_order, cancel_order, remove_item, modify_item, check_availability, create_reservation, get_specials, get_past_orders
-- [ ] Audio player section (placeholder with HTML5 audio element, presigned URL integration)
-- [ ] Status transitions: assigned -> in_progress (auto on first edit), in_progress -> completed (button)
-- [ ] Flag/skip functionality with notes
-- [ ] Annotator notes textarea (saves via HTMX)
-- [ ] Conversation list filtering: by status tabs (assigned, in_progress, completed)
-- [ ] Verify: Can view conversation, edit turns inline, edit tool calls, mark as completed
-- [ ] Git commit: "Phase 3: Annotator UI - conversation editor with HTMX"
+1. **Model Edge Cases** (conversations/tests.py or new test files):
+   - Conversation status transitions: test ALL valid transitions and verify invalid ones are rejected
+   - Turn ordering: ensure positions are correct, test bulk creation
+   - ToolCall with missing/malformed args (None, empty dict, nested JSON)
+   - SystemPrompt: test creating multiple active prompts, ensure only latest is active
+   - Agent: test duplicate agent_id handling
+   - User role permissions: test all combinations
 
-### Phase 4: Admin Panel
-- [ ] Admin dashboard: overview stats (total, pending, completed, approved counts)
-- [ ] Team progress bars: per-annotator completion percentage and throughput
-- [ ] Conversation assignment page: filter by agent/status, select conversations, assign to annotator
-- [ ] Bulk assignment: select multiple + choose assignee
-- [ ] Auto-distribute: evenly distribute unassigned across active annotators
-- [ ] Review queue: list completed conversations awaiting review
-- [ ] Review page: same editor view + diff highlighting (original vs edited in yellow) + annotator notes
-- [ ] Approve/reject buttons: approve sets status=approved, reject sets status=assigned with reviewer_notes
-- [ ] Team management: list members, invite (create account with temp password), deactivate
-- [ ] System prompt management: list prompts, create new version, set active, edit
-- [ ] Verify: Can assign conversations, review, approve/reject, manage team
-- [ ] Git commit: "Phase 4: Admin panel - assignment, review, team management"
+2. **Export Pipeline Deep Testing**:
+   - conversation_to_messages with NO turns (empty conversation)
+   - conversation_to_messages with ONLY user turns (no agent)
+   - conversation_to_messages with ONLY agent turns (no user)
+   - conversation_to_messages with multiple tool calls on same turn
+   - conversation_to_messages with edited text vs original (verify edited is used)
+   - conversation_to_messages with edited tool call args (verify edited is used)
+   - Tool call with missing response_body (null)
+   - Tool call with error status code (400, 500)
+   - validate_example with malformed tool_calls (missing function key, invalid JSON args)
+   - validate_example with duplicate tool_call_ids
+   - generate_jsonl_examples with mix of approved and non-approved conversations
+   - split_train_validation with edge cases: 0 examples, 1 example, 2 examples
+   - count_tokens returns consistent results
+   - estimate_training_cost calculation accuracy
+   - export_jsonl produces valid JSON on each line
+   - Tool definitions: verify all 8 tools have correct schema structure
 
-### Phase 5: Export Pipeline
-- [ ] Create conversations/services/export.py — JSONL export service
-- [ ] Turn -> OpenAI message transformation (user->user, agent->assistant, tool calls->function format)
-- [ ] System prompt injection as first message in every example
-- [ ] Tool call -> function calling format: assistant message with tool_calls array + tool message with response
-- [ ] Include tools array with full schema for all 8 tools
-- [ ] Validation: every example has user + assistant messages, valid JSON args, unique tool_call_ids, no empty content
-- [ ] Train/validation split option (80/20 random)
-- [ ] Token counting with tiktoken (estimate training cost)
-- [ ] Export page UI: filter options (all approved, by agent, by date range), checkboxes for options, preview, download
-- [ ] Preview endpoint: show first 3 examples formatted
-- [ ] Download endpoint: generate and serve .jsonl file(s)
-- [ ] Verify: Can export approved conversations as valid JSONL, token count displays
-- [ ] Git commit: "Phase 5: Export pipeline - JSONL generation with validation"
+3. **View/Endpoint Testing**:
+   - Authentication: unauthenticated access to all protected routes returns redirect/403
+   - Annotator trying to access admin routes returns 403
+   - Admin accessing annotator routes works
+   - Conversation editor: test with conversation NOT assigned to logged-in user
+   - Turn edit: test editing turn on conversation assigned to different user
+   - Tool call edit: test with each of the 8 tool types
+   - Complete conversation that's not in_progress (should fail)
+   - Flag conversation without notes
+   - Approve/reject conversation not in completed status
+   - Assign conversation already assigned to someone
+   - Auto-distribute with no annotators
+   - Auto-distribute with uneven distribution
+   - Export download with no approved conversations
+   - Export download with split option
+   - Export download with tool_calls_only filter
+   - Export download with agent filter
+   - Sync endpoint (mocked ElevenLabs API)
+   - Team invite with duplicate username
+   - Prompt management: edit, activate, list
 
-### Phase 6: Analytics and Polish
-- [ ] Per-annotator metrics: completion rate, avg time per conversation, conversations/hour
-- [ ] Edit rate and tool call edit rate tracking
-- [ ] Rejection rate and flag rate
-- [ ] Analytics dashboard page with charts/progress bars
-- [ ] Pipeline visualization: Unassigned -> Assigned -> In Progress -> Completed -> Approved funnel
-- [ ] Export history log (when, how many, by whom)
-- [ ] UI polish: consistent styling, responsive layout, loading states, error messages
-- [ ] Role-based navigation: annotators see their dashboard, admins see admin panel
-- [ ] Middleware: restrict admin routes to admin role
-- [ ] 404 and permission denied pages
-- [ ] Verify: Analytics page shows metrics, navigation is role-based, all pages are polished
-- [ ] Git commit: "Phase 6: Analytics, polish, and role-based access"
+4. **ElevenLabs Sync Service Testing**:
+   - Mock the ElevenLabs API client
+   - Test sync with empty conversation list
+   - Test sync with conversations that have no transcript
+   - Test sync deduplication (same elevenlabs_id twice)
+   - Test sync with pagination (cursor handling)
+   - Test transcript parsing with various formats
+
+After generating tests, run them ALL and fix any failures. Iterate until all tests pass.
+
+### Phase 2: UI/UX Review
+
+Spawn the **ui-ux-reviewer** agent to review the following pages. The Django dev server must be running on port 8000. Start it if needed.
+
+Pages to review (both as admin and annotator where applicable):
+
+1. **Login page**: /login/
+2. **Annotator dashboard**: /conversations/ (logged in as annotator)
+3. **Conversation editor**: /conversations/<id>/ (with test data - turns, tool calls)
+4. **Admin dashboard**: /admin-panel/ (logged in as admin)
+5. **Agent management**: /admin-panel/agents/
+6. **Assignment page**: /admin-panel/assign/
+7. **Review queue**: /admin-panel/review/
+8. **Review detail**: /admin-panel/review/<id>/
+9. **Export page**: /admin-panel/export/
+10. **Analytics page**: /admin-panel/analytics/
+11. **Team management**: /admin-panel/team/
+12. **Prompt management**: /admin-panel/prompts/
+13. **403 page**: Test by accessing admin route as annotator
+14. **404 page**: Navigate to non-existent URL
+
+For each page, evaluate:
+- Visual design consistency (Tailwind styling, spacing, colors)
+- Responsive layout (test at different widths)
+- Accessibility (contrast, labels, keyboard navigation)
+- Loading states and error handling
+- Empty states (what does the page look like with no data?)
+- Navigation flow and breadcrumbs
+- User feedback (success/error messages after actions)
+
+Fix ALL critical and high-priority UI/UX issues found.
+
+### Phase 3: Integration Testing
+
+After unit tests and UI fixes are complete:
+
+1. **Full annotator workflow test**:
+   - Log in as annotator
+   - View assigned conversations
+   - Open conversation editor
+   - Verify status auto-transitions to in_progress
+   - Edit a turn via HTMX
+   - Edit a tool call via HTMX
+   - Mark conversation as complete
+   - Verify completed conversations appear correctly
+
+2. **Full admin workflow test**:
+   - Log in as admin
+   - View dashboard stats
+   - Assign conversations to annotators
+   - Review completed conversations
+   - Approve/reject conversations
+   - Export approved conversations as JSONL
+   - Verify JSONL format is valid for OpenAI fine-tuning
+   - Check analytics page reflects current data
+
+3. **JSONL validation**: Verify exported JSONL matches OpenAI's fine-tuning format:
+   - Each line is valid JSON
+   - Each example has a "messages" array
+   - First message is system role
+   - Tool calls use correct function calling format
+   - Tool responses have matching tool_call_ids
+   - Tools array has correct schema structure
+
+Run ALL tests one final time to confirm everything passes.
 
 ## FINAL VERIFICATION (must ALL pass before promise)
-- [ ] PostgreSQL container running on port 5434
-- [ ] Django dev server starts without errors on port 8000
-- [ ] Can log in as admin and annotator
-- [ ] Can add an agent and see agent list
-- [ ] Conversation models are properly migrated
-- [ ] Annotator dashboard shows assigned conversations
-- [ ] Conversation editor displays turns in chat style
-- [ ] Turn editing works via HTMX (inline edit, save, cancel)
-- [ ] Tool call editing works with per-tool forms
-- [ ] Admin can assign conversations to annotators
-- [ ] Admin can review and approve/reject conversations
-- [ ] Export produces valid JSONL with system prompt and tool schemas
-- [ ] Analytics page displays metrics
-- [ ] All Django tests pass (python manage.py test)
+- [ ] All unit tests pass (python manage.py test --verbosity=2)
+- [ ] Test coverage includes model edge cases, export pipeline, views, and sync
+- [ ] At least 60+ total tests (up from current 37)
+- [ ] UI/UX reviewer has reviewed all key pages
+- [ ] Critical UI/UX issues are fixed
+- [ ] Full annotator workflow works end-to-end
+- [ ] Full admin workflow works end-to-end
+- [ ] JSONL export produces valid OpenAI fine-tuning format
 - [ ] No uncaught exceptions on any page
+- [ ] All fixes are committed to git
