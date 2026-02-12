@@ -1,0 +1,5 @@
+{% for turn in turns %}
+<div id="turn-{{ turn.pk }}">
+    {% include "conversations/partials/turn_display.html" with turn=turn conversation=conversation %}
+</div>
+{% endfor %}

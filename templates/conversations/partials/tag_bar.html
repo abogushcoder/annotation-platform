@@ -1,0 +1,29 @@
+<div class="flex flex-wrap items-center gap-2">
+    {% for tag in conversation.tags.all %}
+    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-white" style="background-color: {{ tag.color }}">
+        {{ tag.name }}
+        <button hx-post="{% url 'conversation_tags' conversation.pk %}"
+                hx-target="#tag-bar"
+                hx-swap="innerHTML"
+                hx-vals='{"action": "remove", "tag_id": "{{ tag.pk }}"}'
+                class="hover:opacity-70">&times;</button>
+    </span>
+    {% endfor %}
+    <div class="relative inline-block">
+        <form hx-post="{% url 'conversation_tags' conversation.pk %}"
+              hx-target="#tag-bar"
+              hx-swap="innerHTML"
+              class="flex items-center gap-1">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add">
+            <input type="text" name="tag_name" list="tag-suggestions" placeholder="Add tag..."
+                   class="rounded border border-gray-300 px-2 py-0.5 text-xs w-24 focus:w-32 transition-all focus:border-indigo-500 focus:outline-none">
+            <datalist id="tag-suggestions">
+                {% for tag in all_tags %}
+                <option value="{{ tag.name }}">
+                {% endfor %}
+            </datalist>
+            <button type="submit" class="text-xs text-indigo-600 hover:text-indigo-800">+</button>
+        </form>
+    </div>
+</div>

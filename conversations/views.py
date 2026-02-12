@@ -1,20 +1,28 @@
 import requests
 
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q, F
 from django.http import HttpResponse
 from django.shortcuts import render, get_object_or_404, redirect
 from django.utils import timezone
 
-from .models import Conversation, Turn, ToolCall
+from .models import Conversation, Turn, ToolCall, Tag
 from .services.elevenlabs import ElevenLabsClient
 
 
 @login_required
 def conversation_list(request):
     status_filter = request.GET.get('status', 'assigned')
+    search_query = request.GET.get('q', '')
     conversations = Conversation.objects.filter(assigned_to=request.user)
     if status_filter and status_filter != 'all':
         conversations = conversations.filter(status=status_filter)
+    if search_query:
+        conversations = conversations.filter(
+            Q(turns__original_text__icontains=search_query) |
+            Q(turns__edited_text__icontains=search_query) |
+            Q(elevenlabs_id__icontains=search_query)
+        ).distinct()
 
     assigned_count = Conversation.objects.filter(assigned_to=request.user, status='assigned').count()
     in_progress_count = Conversation.objects.filter(assigned_to=request.user, status='in_progress').count()
@@ -23,6 +31,7 @@ def conversation_list(request):
     return render(request, 'conversations/list.html', {
         'conversations': conversations,
         'status_filter': status_filter,
+        'search_query': search_query,
         'assigned_count': assigned_count,
         'in_progress_count': in_progress_count,
         'completed_count': completed_count,
@@ -41,9 +50,12 @@ def conversation_editor(request, pk):
         conversation.status = 'in_progress'
         conversation.save()
 
+    all_tags = Tag.objects.all()
+
     return render(request, 'conversations/editor.html', {
         'conversation': conversation,
         'turns': turns,
+        'all_tags': all_tags,
     })
 
 
@@ -178,3 +190,99 @@ def conversation_audio(request, pk):
     response['Content-Disposition'] = 'inline'
     response['Cache-Control'] = 'private, max-age=3600'
     return response
+
+
+@login_required
+def turn_delete(request, pk, turn_id):
+    conversation = get_object_or_404(Conversation, pk=pk)
+    turn = get_object_or_404(Turn, pk=turn_id, conversation=conversation)
+    if request.method == 'POST':
+        turn.is_deleted = not turn.is_deleted
+        turn.save()
+    return render(request, 'conversations/partials/turn_display.html', {
+        'turn': turn, 'conversation': conversation
+    })
+
+
+@login_required
+def tool_call_delete(request, pk, tc_id):
+    conversation = get_object_or_404(Conversation, pk=pk)
+    tc = get_object_or_404(ToolCall, pk=tc_id, turn__conversation=conversation)
+    if request.method == 'POST':
+        tc.is_deleted = not tc.is_deleted
+        tc.save()
+    return render(request, 'conversations/partials/tool_call_card.html', {
+        'tc': tc, 'conversation': conversation
+    })
+
+
+@login_required
+def turn_toggle_weight(request, pk, turn_id):
+    conversation = get_object_or_404(Conversation, pk=pk)
+    turn = get_object_or_404(Turn, pk=turn_id, conversation=conversation)
+    if request.method == 'POST' and turn.role == 'agent':
+        if turn.weight is None:
+            turn.weight = 0
+        elif turn.weight == 0:
+            turn.weight = 1
+        else:
+            turn.weight = None
+        turn.save()
+    return render(request, 'conversations/partials/turn_display.html', {
+        'turn': turn, 'conversation': conversation
+    })
+
+
+@login_required
+def turn_insert(request, pk, after_turn_id):
+    conversation = get_object_or_404(Conversation, pk=pk)
+    after_turn = get_object_or_404(Turn, pk=after_turn_id, conversation=conversation)
+
+    if request.method == 'POST':
+        role = request.POST.get('role', 'agent')
+        text = request.POST.get('text', '').strip()
+        if not text:
+            return HttpResponse('Text required', status=400)
+
+        # Shift positions in reverse order to avoid unique constraint violations
+        for t in Turn.objects.filter(
+            conversation=conversation, position__gt=after_turn.position
+        ).order_by('-position'):
+            t.position += 1
+            t.save()
+
+        Turn.objects.create(
+            conversation=conversation,
+            position=after_turn.position + 1,
+            role=role,
+            original_text=text,
+            is_inserted=True,
+        )
+
+        turns = conversation.turns.prefetch_related('tool_calls').all()
+        return render(request, 'conversations/partials/turn_list.html', {
+            'turns': turns, 'conversation': conversation
+        })
+
+    return render(request, 'conversations/partials/turn_insert_form.html', {
+        'conversation': conversation, 'after_turn': after_turn
+    })
+
+
+@login_required
+def conversation_tag_manage(request, pk):
+    conversation = get_object_or_404(Conversation, pk=pk)
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        tag_name = request.POST.get('tag_name', '').strip()
+        if action == 'add' and tag_name:
+            tag, _ = Tag.objects.get_or_create(name=tag_name)
+            conversation.tags.add(tag)
+        elif action == 'remove':
+            tag_id = request.POST.get('tag_id')
+            if tag_id:
+                conversation.tags.remove(tag_id)
+    all_tags = Tag.objects.all()
+    return render(request, 'conversations/partials/tag_bar.html', {
+        'conversation': conversation, 'all_tags': all_tags
+    })

@@ -37,6 +37,7 @@ class Conversation(models.Model):
     user_audio_s3_key = models.CharField(max_length=500, blank=True, default='')
     agent_audio_s3_key = models.CharField(max_length=500, blank=True, default='')
     raw_data = models.JSONField(default=dict, help_text="Full raw response from ElevenLabs API")
+    tags = models.ManyToManyField('Tag', blank=True, related_name='conversations')
     annotator_notes = models.TextField(blank=True, default='')
     reviewer_notes = models.TextField(blank=True, default='')
 
@@ -52,6 +53,15 @@ class Conversation(models.Model):
         return f"{self.elevenlabs_id} ({self.get_status_display()})"
 
 
+class Tag(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    color = models.CharField(max_length=7, default='#6366f1')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
 class Turn(models.Model):
     class Role(models.TextChoices):
         USER = 'user', 'Customer'
@@ -64,6 +74,13 @@ class Turn(models.Model):
     edited_text = models.TextField(blank=True, default='', help_text="Annotator's edited version")
     time_in_call_secs = models.FloatField(null=True, blank=True)
     is_edited = models.BooleanField(default=False)
+    is_deleted = models.BooleanField(default=False)
+    is_inserted = models.BooleanField(default=False)
+    weight = models.IntegerField(null=True, blank=True, help_text="Training weight (0=don't learn, 1=learn). Null=auto.")
+    rag_context = models.JSONField(
+        default=list, blank=True,
+        help_text="RAG chunks retrieved for this turn: [{document_id, chunk_id, content, vector_distance}]"
+    )
 
     class Meta:
         ordering = ['conversation', 'position']
@@ -86,6 +103,7 @@ class ToolCall(models.Model):
     response_body = models.JSONField(default=dict, blank=True, help_text="Response from the webhook")
     error_message = models.TextField(blank=True, default='')
     is_edited = models.BooleanField(default=False)
+    is_deleted = models.BooleanField(default=False)
 
     @property
     def display_args(self):

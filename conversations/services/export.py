@@ -174,15 +174,22 @@ def _get_tools_used(turns):
     """Get set of tool names used in the conversation."""
     tools_used = set()
     for turn in turns:
+        if getattr(turn, 'is_deleted', False):
+            continue
         for tc in turn.tool_calls.all():
+            if getattr(tc, 'is_deleted', False):
+                continue
             tools_used.add(tc.tool_name)
     return tools_used
 
 
-def conversation_to_messages(conversation, include_system_prompt=True, include_tools=True):
+def conversation_to_messages(conversation, include_system_prompt=True, include_tools=True,
+                             include_rag_context=True):
     """Convert a Conversation to OpenAI fine-tuning message format.
 
     Returns dict with 'messages', 'tools', 'parallel_tool_calls' keys.
+    When include_rag_context is True, RAG chunks from agent turns are injected
+    into the preceding user message (matching how the model sees context at inference).
     """
     messages = []
     call_counter = 0
@@ -199,11 +206,28 @@ def conversation_to_messages(conversation, include_system_prompt=True, include_t
 
     turns = list(conversation.turns.prefetch_related('tool_calls').all())
 
+    # Pre-compute: map user turn position -> aggregated RAG context from following agent turns.
+    # ElevenLabs attaches rag_retrieval_info to the agent turn that used the context, but for
+    # fine-tuning the context should appear in the preceding user message (how the model sees it).
+    rag_for_user_turn = {}
+    if include_rag_context:
+        last_user_pos = None
+        for turn in turns:
+            if turn.is_deleted:
+                continue
+            if turn.role == 'user':
+                last_user_pos = turn.position
+            elif turn.role == 'agent' and turn.rag_context and last_user_pos is not None:
+                rag_for_user_turn.setdefault(last_user_pos, []).extend(turn.rag_context)
+
     for turn in turns:
+        if getattr(turn, 'is_deleted', False):
+            continue
+
         if turn.role == "user":
             seen_user = True
 
-        tool_calls_for_turn = list(turn.tool_calls.all())
+        tool_calls_for_turn = [tc for tc in turn.tool_calls.all() if not getattr(tc, 'is_deleted', False)]
 
         # If this turn has tool calls, we need special handling
         if tool_calls_for_turn:
@@ -249,7 +273,11 @@ def conversation_to_messages(conversation, include_system_prompt=True, include_t
             text = turn.display_text.strip()
             if text:
                 assistant_msg["content"] = text
-            if not seen_user:
+            # Respect stored weight, fall back to auto logic
+            turn_weight = getattr(turn, 'weight', None)
+            if turn_weight is not None:
+                assistant_msg["weight"] = turn_weight
+            elif not seen_user:
                 assistant_msg["weight"] = 0
             messages.append(assistant_msg)
 
@@ -263,12 +291,24 @@ def conversation_to_messages(conversation, include_system_prompt=True, include_t
                 continue
 
             role = "user" if turn.role == "user" else "assistant"
+
+            # Inject RAG context into user messages
+            if role == "user" and include_rag_context:
+                rag_chunks = rag_for_user_turn.get(turn.position, [])
+                content_parts = [c.get('content', '') for c in rag_chunks if c.get('content')]
+                if content_parts:
+                    text = text + "\n\nContext:\n" + "\n\n".join(content_parts)
+
             msg = {
                 "role": role,
                 "content": text,
             }
-            if role == "assistant" and not seen_user:
-                msg["weight"] = 0
+            if role == "assistant":
+                turn_weight = getattr(turn, 'weight', None)
+                if turn_weight is not None:
+                    msg["weight"] = turn_weight
+                elif not seen_user:
+                    msg["weight"] = 0
             messages.append(msg)
 
     result = {
@@ -391,7 +431,8 @@ def validate_dataset(examples):
 
 
 def generate_jsonl_examples(limit=None, agent_id=None, tool_calls_only=False,
-                             include_system_prompt=True, include_tools=True):
+                             include_system_prompt=True, include_tools=True,
+                             tag_filter=None, include_rag_context=True):
     """Generate JSONL examples from approved conversations.
 
     Returns list of dicts (each dict is one training example).
@@ -401,6 +442,8 @@ def generate_jsonl_examples(limit=None, agent_id=None, tool_calls_only=False,
         qs = qs.filter(agent_id=agent_id)
     if tool_calls_only:
         qs = qs.filter(turns__tool_calls__isnull=False).distinct()
+    if tag_filter:
+        qs = qs.filter(tags__name=tag_filter)
 
     conversations = qs.prefetch_related('turns__tool_calls')
     if limit:
@@ -408,7 +451,8 @@ def generate_jsonl_examples(limit=None, agent_id=None, tool_calls_only=False,
 
     examples = []
     for conv in conversations:
-        example = conversation_to_messages(conv, include_system_prompt, include_tools)
+        example = conversation_to_messages(conv, include_system_prompt, include_tools,
+                                           include_rag_context)
         validation_errors = validate_example(example)
         if not validation_errors:
             examples.append(example)

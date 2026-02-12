@@ -11,6 +11,7 @@ urlpatterns = [
     path('assign/', views.assign_conversations, name='assign_conversations'),
     path('assign/auto/', views.auto_distribute, name='auto_distribute'),
     path('review/', views.review_queue, name='review_queue'),
+    path('review/bulk-approve/', views.bulk_approve, name='bulk_approve'),
     path('review/<int:pk>/', views.review_conversation, name='review_conversation'),
     path('review/<int:pk>/approve/', views.approve_conversation, name='approve_conversation'),
     path('review/<int:pk>/reject/', views.reject_conversation, name='reject_conversation'),

@@ -26,7 +26,11 @@
         </form>
     </div>
     {% empty %}
-    <div class="p-8 text-center text-gray-500">No team members yet.</div>
+    <div class="p-8 text-center">
+        <p class="text-gray-500 font-medium">No team members yet.</p>
+        <p class="text-sm text-gray-400 mt-2">Invite annotators to help review and annotate conversations. Admin users can also self-assign conversations from the <a href="{% url 'assign_conversations' %}" class="text-indigo-600 hover:text-indigo-800 underline">Assign page</a>.</p>
+        <a href="{% url 'team_invite' %}" class="inline-block mt-4 px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">+ Invite First Member</a>
+    </div>
     {% endfor %}
 </div>
 {% endblock %}

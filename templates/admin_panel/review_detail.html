@@ -11,6 +11,40 @@
     <span class="text-sm text-gray-500">Annotator: {{ conversation.assigned_to.get_full_name|default:conversation.assigned_to.username }}</span>
 </div>
 
+{% if edit_stats.total_changes > 0 or edit_stats.rag_turns > 0 %}
+<div class="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-4">
+    <div class="flex flex-wrap items-center gap-3 text-xs">
+        <span class="font-medium text-indigo-800">{% if edit_stats.total_changes > 0 %}Edit Summary:{% else %}Info:{% endif %}</span>
+        {% if edit_stats.turns_edited %}
+        <span class="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">{{ edit_stats.turns_edited }} turn{{ edit_stats.turns_edited|pluralize }} edited</span>
+        {% endif %}
+        {% if edit_stats.turns_deleted %}
+        <span class="bg-red-100 text-red-800 px-2 py-0.5 rounded">{{ edit_stats.turns_deleted }} turn{{ edit_stats.turns_deleted|pluralize }} deleted</span>
+        {% endif %}
+        {% if edit_stats.tool_calls_deleted %}
+        <span class="bg-red-100 text-red-800 px-2 py-0.5 rounded">{{ edit_stats.tool_calls_deleted }} tool call{{ edit_stats.tool_calls_deleted|pluralize }} deleted</span>
+        {% endif %}
+        {% if edit_stats.turns_inserted %}
+        <span class="bg-green-100 text-green-800 px-2 py-0.5 rounded">{{ edit_stats.turns_inserted }} turn{{ edit_stats.turns_inserted|pluralize }} inserted</span>
+        {% endif %}
+        {% if edit_stats.weight_overrides %}
+        <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded">{{ edit_stats.weight_overrides }} weight override{{ edit_stats.weight_overrides|pluralize }}</span>
+        {% endif %}
+        {% if edit_stats.rag_turns %}
+        <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded">{{ edit_stats.rag_turns }} turn{{ edit_stats.rag_turns|pluralize }} with RAG</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if conversation.tags.exists %}
+<div class="mb-4 flex flex-wrap items-center gap-2">
+    {% for tag in conversation.tags.all %}
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white" style="background-color: {{ tag.color }}">{{ tag.name }}</span>
+    {% endfor %}
+</div>
+{% endif %}
+
 {% if conversation.annotator_notes %}
 <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
     <h3 class="text-sm font-medium text-blue-800 mb-1">Annotator Notes</h3>
@@ -48,12 +82,35 @@
 
 <div class="space-y-0 mb-6">
     {% for turn in turns %}
+    {% if turn.is_deleted %}
     <div class="flex {% if turn.role == 'agent' %}justify-end{% else %}justify-start{% endif %} py-2">
-        <div class="max-w-[75%] {% if turn.role == 'agent' %}bg-blue-50 border-blue-200{% else %}bg-gray-50 border-gray-200{% endif %} border rounded-lg p-3">
+        <div class="max-w-[75%] bg-red-50 border border-red-200 rounded-lg p-3 opacity-60">
             <div class="flex items-center justify-between mb-1">
-                <span class="text-xs font-medium {% if turn.role == 'agent' %}text-blue-700{% else %}text-gray-700{% endif %}">
+                <span class="text-xs font-medium text-red-700 line-through">
                     {% if turn.role == 'agent' %}Restaurant AI{% else %}Customer{% endif %}
                 </span>
+                <span class="text-xs text-red-500 font-medium">Deleted by annotator</span>
+            </div>
+            <p class="text-sm text-red-400 line-through">{{ turn.original_text }}</p>
+        </div>
+    </div>
+    {% else %}
+    <div class="flex {% if turn.role == 'agent' %}justify-end{% else %}justify-start{% endif %} py-2">
+        <div class="max-w-[75%] {% if turn.is_inserted %}border-dashed border-2 border-green-400 {% endif %}{% if turn.role == 'agent' %}bg-blue-50 border-blue-200{% else %}bg-gray-50 border-gray-200{% endif %} {% if not turn.is_inserted %}border{% endif %} rounded-lg p-3">
+            <div class="flex items-center justify-between mb-1">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-medium {% if turn.role == 'agent' %}text-blue-700{% else %}text-gray-700{% endif %}">
+                        {% if turn.role == 'agent' %}Restaurant AI{% else %}Customer{% endif %}
+                    </span>
+                    {% if turn.is_inserted %}
+                    <span class="text-[10px] font-medium text-green-600 bg-green-50 px-1.5 py-0.5 rounded">Inserted</span>
+                    {% endif %}
+                    {% if turn.role == 'agent' and turn.weight is not None %}
+                    <span class="text-[10px] px-1.5 py-0.5 rounded-full {% if turn.weight == 0 %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                        W: {{ turn.weight }}
+                    </span>
+                    {% endif %}
+                </div>
                 <span class="text-xs text-gray-400">{{ turn.time_in_call_secs|floatformat:1 }}s</span>
             </div>
 
@@ -65,7 +122,37 @@
             <p class="text-sm text-gray-900">{{ turn.original_text }}</p>
             {% endif %}
 
+            {% if turn.rag_context %}
+            <details class="mt-2 group/rag">
+                <summary class="flex items-center gap-1 text-xs text-purple-600 cursor-pointer hover:text-purple-800 py-1 px-2 -mx-2 rounded hover:bg-purple-50 select-none">
+                    <span class="transition-transform group-open/rag:rotate-90">&#9654;</span>
+                    RAG Context ({{ turn.rag_context|length }} chunk{{ turn.rag_context|length|pluralize }})
+                </summary>
+                <div class="mt-1 space-y-1">
+                    {% for chunk in turn.rag_context %}
+                    <div class="text-xs text-gray-500 bg-purple-50 border border-purple-100 rounded p-2">
+                        {{ chunk.content|truncatechars:200 }}
+                        {% if chunk.vector_distance %}
+                        <span class="text-purple-400 ml-1">(d={{ chunk.vector_distance|floatformat:3 }})</span>
+                        {% endif %}
+                        {% if chunk.fetch_error %}
+                        <span class="text-red-400 ml-1">(fetch failed)</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+
             {% for tc in turn.tool_calls.all %}
+            {% if tc.is_deleted %}
+            <div class="bg-red-50 border border-red-200 rounded-lg p-3 mt-2 opacity-60">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-red-400 line-through">{{ tc.tool_name }}</span>
+                    <span class="text-xs text-red-500 font-medium">Tool Call Deleted</span>
+                </div>
+            </div>
+            {% else %}
             {% get_tool_display_data tc as d %}
             {% get_tool_card_template tc as card_tpl %}
             <div class="bg-white border {% if d.has_error %}border-red-200{% else %}border-gray-300{% endif %} rounded-lg p-3 mt-2">
@@ -93,9 +180,11 @@
 
                 {% include card_tpl with d=d tc=tc %}
             </div>
+            {% endif %}
             {% endfor %}
         </div>
     </div>
+    {% endif %}
     {% endfor %}
 </div>
 

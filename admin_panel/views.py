@@ -11,7 +11,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 
 from accounts.models import User
-from conversations.models import Agent, Conversation, Turn, ToolCall, SystemPrompt, ExportLog
+from conversations.models import Agent, Conversation, Turn, ToolCall, SystemPrompt, ExportLog, Tag
 
 logger = logging.getLogger(__name__)
 
@@ -134,21 +134,28 @@ def agent_add(request):
 
     # Fetch available agents from ElevenLabs for the dropdown
     elevenlabs_agents = []
+    all_elevenlabs_agents = []
     existing_ids = set(Agent.objects.values_list('agent_id', flat=True))
-    if settings.ELEVENLABS_API_KEY:
+    has_api_key = bool(settings.ELEVENLABS_API_KEY)
+    if has_api_key:
         try:
             from conversations.services.elevenlabs import ElevenLabsClient
             client = ElevenLabsClient(settings.ELEVENLABS_API_KEY)
+            all_elevenlabs_agents = client.list_agents()
             elevenlabs_agents = [
-                a for a in client.list_agents()
+                a for a in all_elevenlabs_agents
                 if a['agent_id'] not in existing_ids
             ]
         except Exception as e:
             messages.warning(request, f'Could not fetch agents from ElevenLabs: {e}')
 
+    all_imported = has_api_key and all_elevenlabs_agents and not elevenlabs_agents
+
     return render(request, 'admin_panel/agent_form.html', {
         'action': 'Add',
         'elevenlabs_agents': elevenlabs_agents,
+        'has_api_key': has_api_key,
+        'all_imported': all_imported,
     })
 
 
@@ -208,15 +215,23 @@ def assign_conversations(request):
 
     agent_filter = request.GET.get('agent')
     status_filter = request.GET.get('status', 'unassigned')
+    search_query = request.GET.get('q', '')
 
     conversations = Conversation.objects.select_related('agent', 'assigned_to')
     if status_filter:
         conversations = conversations.filter(status=status_filter)
     if agent_filter:
         conversations = conversations.filter(agent_id=agent_filter)
+    if search_query:
+        conversations = conversations.filter(
+            Q(turns__original_text__icontains=search_query) |
+            Q(turns__edited_text__icontains=search_query) |
+            Q(elevenlabs_id__icontains=search_query)
+        ).distinct()
 
     agents = Agent.objects.all()
-    annotators = User.objects.filter(role='annotator', is_active=True)
+    annotators = User.objects.filter(role__in=['annotator', 'admin'], is_active=True)
+    active_prompt = SystemPrompt.objects.filter(is_active=True).first()
 
     unassigned_count = Conversation.objects.filter(status='unassigned').count()
     assigned_count = Conversation.objects.filter(status='assigned').count()
@@ -226,8 +241,10 @@ def assign_conversations(request):
         'conversations': conversations,
         'agents': agents,
         'annotators': annotators,
+        'active_prompt': active_prompt,
         'status_filter': status_filter,
         'agent_filter': agent_filter,
+        'search_query': search_query,
         'unassigned_count': unassigned_count,
         'assigned_count': assigned_count,
         'in_progress_count': in_progress_count,
@@ -270,10 +287,33 @@ def review_conversation(request, pk):
     conversation = get_object_or_404(Conversation, pk=pk)
     turns = conversation.turns.prefetch_related('tool_calls').all()
 
+    edit_stats = {
+        'turns_edited': turns.filter(is_edited=True).count(),
+        'turns_deleted': turns.filter(is_deleted=True).count(),
+        'tool_calls_deleted': ToolCall.objects.filter(turn__conversation=conversation, is_deleted=True).count(),
+        'weight_overrides': turns.filter(weight__isnull=False).count(),
+        'turns_inserted': turns.filter(is_inserted=True).count(),
+        'rag_turns': sum(1 for t in turns if t.rag_context),
+    }
+    edit_stats['total_changes'] = sum(v for k, v in edit_stats.items() if k != 'rag_turns')
+
     return render(request, 'admin_panel/review_detail.html', {
         'conversation': conversation,
         'turns': turns,
+        'edit_stats': edit_stats,
     })
+
+
+@admin_required
+def bulk_approve(request):
+    if request.method == 'POST':
+        conv_ids = request.POST.getlist('conversation_ids')
+        if conv_ids:
+            updated = Conversation.objects.filter(
+                pk__in=conv_ids, status='completed'
+            ).update(status='approved', reviewed_at=timezone.now())
+            messages.success(request, f'{updated} conversations approved.')
+    return redirect('review_queue')
 
 
 @admin_required
@@ -318,12 +358,15 @@ def export_page(request):
         token_count = count_tokens(examples)
         estimated_cost = estimate_training_cost(token_count)
 
+    tags = Tag.objects.all()
+
     return render(request, 'admin_panel/export.html', {
         'agents': agents,
         'approved_count': approved_count,
         'active_prompt': active_prompt,
         'token_count': token_count,
         'estimated_cost': estimated_cost,
+        'tags': tags,
     })
 
 
@@ -331,12 +374,34 @@ def export_page(request):
 def export_preview(request):
     from conversations.services.export import generate_jsonl_examples
     import json
-    examples = generate_jsonl_examples(limit=3)
-    formatted = [json.dumps(ex, indent=2) for ex in examples]
+    from html import escape
+
+    filter_type = request.GET.get('filter', 'all')
+    agent_id = request.GET.get('agent_id')
+    include_system = 'include_system_prompt' in request.GET
+    include_tools = 'include_tools' in request.GET
+    include_rag_context = 'include_rag_context' in request.GET
+    tool_calls_only = 'tool_calls_only' in request.GET
+    tag_filter = request.GET.get('tag_filter', '')
+
+    kwargs = {
+        'limit': 3,
+        'include_system_prompt': include_system,
+        'include_tools': include_tools,
+        'tool_calls_only': tool_calls_only,
+        'include_rag_context': include_rag_context,
+    }
+    if filter_type == 'agent' and agent_id:
+        kwargs['agent_id'] = agent_id
+    if tag_filter:
+        kwargs['tag_filter'] = tag_filter
+
+    examples = generate_jsonl_examples(**kwargs)
+    formatted = [json.dumps(ex, indent=2, ensure_ascii=False) for ex in examples]
     html = ""
     for i, f in enumerate(formatted):
         html += f'<div class="mb-4"><h4 class="text-sm font-semibold text-gray-700 mb-1">Example {i+1}</h4>'
-        html += f'<pre class="bg-gray-900 text-green-400 text-xs p-3 rounded overflow-x-auto max-h-64">{f}</pre></div>'
+        html += f'<pre class="bg-gray-900 text-green-400 text-xs p-3 rounded overflow-x-auto max-h-64">{escape(f)}</pre></div>'
     if not formatted:
         html = '<p class="text-gray-500 text-sm">No approved conversations to preview.</p>'
     return HttpResponse(html)
@@ -356,16 +421,21 @@ def export_download(request):
     agent_id = request.GET.get('agent_id')
     include_system = 'include_system_prompt' in request.GET
     include_tools = 'include_tools' in request.GET
+    include_rag_context = 'include_rag_context' in request.GET
     split = 'split' in request.GET
     tool_calls_only = 'tool_calls_only' in request.GET
+    tag_filter = request.GET.get('tag_filter', '')
 
     kwargs = {
         'include_system_prompt': include_system,
         'include_tools': include_tools,
         'tool_calls_only': tool_calls_only,
+        'include_rag_context': include_rag_context,
     }
     if filter_type == 'agent' and agent_id:
         kwargs['agent_id'] = agent_id
+    if tag_filter:
+        kwargs['tag_filter'] = tag_filter
 
     examples = generate_jsonl_examples(**kwargs)
 

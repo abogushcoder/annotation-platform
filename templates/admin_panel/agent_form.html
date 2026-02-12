@@ -16,8 +16,13 @@
                 <option value="{{ a.agent_id }}">{{ a.name }}{% if a.archived %} (archived){% endif %}</option>
                 {% endfor %}
             </select>
+            <p class="mt-1 text-xs text-gray-500">System prompt will be auto-imported from the selected agent.</p>
         </div>
-        {% else %}
+        {% elif all_imported %}
+        <div class="rounded-md bg-blue-50 border border-blue-200 p-4 mb-2">
+            <p class="text-sm text-blue-800 font-medium">All ElevenLabs agents have been imported.</p>
+            <p class="text-xs text-blue-600 mt-1">You can still add an agent manually by entering its ID below.</p>
+        </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">ElevenLabs Agent ID</label>
             <input type="text" name="agent_id" value="{{ agent.agent_id|default:'' }}" required
@@ -26,7 +31,24 @@
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Label</label>
-            <input type="text" name="label" value="{{ agent.label|default:'' }}" required
+            <input type="text" name="label" value="{{ agent.label|default:'' }}"
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                placeholder="e.g. Tony's Pizzeria">
+        </div>
+        {% elif not has_api_key %}
+        <div class="rounded-md bg-yellow-50 border border-yellow-200 p-4 mb-2">
+            <p class="text-sm text-yellow-800 font-medium">No ElevenLabs API key configured.</p>
+            <p class="text-xs text-yellow-600 mt-1">Set <code>ELEVENLABS_API_KEY</code> in your <code>.env</code> file to auto-discover agents, or enter details manually below.</p>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">ElevenLabs Agent ID</label>
+            <input type="text" name="agent_id" value="{{ agent.agent_id|default:'' }}" required
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                placeholder="agent_0701k...">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Label</label>
+            <input type="text" name="label" value="{{ agent.label|default:'' }}"
                 class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 placeholder="e.g. Tony's Pizzeria">
         </div>
@@ -34,6 +56,20 @@
             <label class="block text-sm font-medium text-gray-700 mb-1">ElevenLabs API Key</label>
             <input type="password" name="api_key" value="{{ agent.elevenlabs_api_key|default:'' }}" required
                 class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+        </div>
+        {% else %}
+        {# API key is set but fetch returned empty or failed #}
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">ElevenLabs Agent ID</label>
+            <input type="text" name="agent_id" value="{{ agent.agent_id|default:'' }}" required
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                placeholder="agent_0701k...">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Label</label>
+            <input type="text" name="label" value="{{ agent.label|default:'' }}"
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                placeholder="e.g. Tony's Pizzeria">
         </div>
         {% endif %}
 

@@ -1,4 +1,20 @@
 {% load conversation_tags %}
+{% if tc.is_deleted %}
+<div class="bg-red-50 border border-red-200 rounded-lg p-3 mt-2 opacity-60">
+    <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-red-400 line-through">{{ tc.tool_name }}</span>
+        <span class="text-xs text-red-500 font-medium">Deleted</span>
+    </div>
+    {% if conversation.status in 'assigned,in_progress' %}
+    <div class="mt-2">
+        <button hx-post="{% url 'tool_call_delete' conversation.pk tc.pk %}"
+                hx-target="#toolcall-{{ tc.pk }}"
+                hx-swap="innerHTML"
+                class="text-xs text-green-600 hover:text-green-800">Restore</button>
+    </div>
+    {% endif %}
+</div>
+{% else %}
 {% get_tool_display_data tc as d %}
 {% get_tool_card_template tc as card_tpl %}
 <div class="bg-white border {% if d.has_error %}border-red-200{% else %}border-gray-300{% endif %} rounded-lg p-3 mt-2">
@@ -32,9 +48,14 @@
                 hx-target="#toolcall-{{ tc.pk }}"
                 hx-swap="innerHTML"
                 class="text-xs text-indigo-600 hover:text-indigo-800">Edit Tool Call</button>
+        <button hx-post="{% url 'tool_call_delete' conversation.pk tc.pk %}"
+                hx-target="#toolcall-{{ tc.pk }}"
+                hx-swap="innerHTML"
+                class="text-xs text-red-500 hover:text-red-700">Delete</button>
         {% if not tc.is_edited %}
         <span class="text-xs text-gray-400">Looks Good &#10003;</span>
         {% endif %}
     </div>
     {% endif %}
 </div>
+{% endif %}

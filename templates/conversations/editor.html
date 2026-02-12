@@ -22,6 +22,24 @@
     </div>
 </div>
 
+{% if conversation.status in 'assigned,in_progress' %}
+<div class="bg-white rounded-lg shadow-sm border p-3 mb-4" id="tag-bar">
+    {% include "conversations/partials/tag_bar.html" with conversation=conversation all_tags=all_tags %}
+</div>
+{% else %}
+{% if conversation.tags.exists %}
+<div class="bg-white rounded-lg shadow-sm border p-3 mb-4">
+    <div class="flex flex-wrap items-center gap-2">
+        {% for tag in conversation.tags.all %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white" style="background-color: {{ tag.color }}">
+            {{ tag.name }}
+        </span>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
 {% if conversation.has_audio %}
 <div class="bg-white rounded-lg shadow-sm border p-4 mb-4">
     <div class="flex items-center justify-between mb-2">
@@ -50,7 +68,7 @@
 </div>
 {% endif %}
 
-<div class="space-y-0">
+<div class="space-y-0" id="turn-list">
     {% for turn in turns %}
     <div id="turn-{{ turn.pk }}">
         {% include "conversations/partials/turn_display.html" with turn=turn conversation=conversation %}

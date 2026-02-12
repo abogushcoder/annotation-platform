@@ -42,7 +42,7 @@ def sync_agent_conversations(agent: Agent) -> dict:
 
             try:
                 conv_detail = client.get_conversation(conv_id)
-                _import_conversation(agent, conv_id, conv_detail)
+                _import_conversation(agent, conv_id, conv_detail, client)
                 stats['imported'] += 1
             except Exception as e:
                 logger.error(f"Failed to import conversation {conv_id}: {e}")
@@ -58,7 +58,7 @@ def sync_agent_conversations(agent: Agent) -> dict:
     return stats
 
 
-def _import_conversation(agent: Agent, conv_id: str, data: dict):
+def _import_conversation(agent: Agent, conv_id: str, data: dict, client: ElevenLabsClient):
     """Create Conversation, Turn, and ToolCall records from ElevenLabs data."""
     metadata = data.get('metadata', {})
 
@@ -100,6 +100,37 @@ def _import_conversation(agent: Agent, conv_id: str, data: dict):
             original_text=turn_data.get('message') or '',
             time_in_call_secs=turn_data.get('time_in_call_secs'),
         )
+
+        # Extract RAG context if present
+        rag_info = turn_data.get('rag_retrieval_info')
+        if rag_info:
+            chunks_meta = rag_info.get('chunks', [])
+            rag_chunks = []
+            for chunk_meta in chunks_meta:
+                doc_id = chunk_meta.get('document_id', '')
+                chunk_id = chunk_meta.get('chunk_id', '')
+                distance = chunk_meta.get('vector_distance')
+                if doc_id and chunk_id:
+                    try:
+                        chunk_data = client.get_kb_chunk(doc_id, chunk_id)
+                        rag_chunks.append({
+                            'document_id': doc_id,
+                            'chunk_id': chunk_id,
+                            'content': chunk_data.get('content', ''),
+                            'vector_distance': distance,
+                        })
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch KB chunk {doc_id}/{chunk_id}: {e}")
+                        rag_chunks.append({
+                            'document_id': doc_id,
+                            'chunk_id': chunk_id,
+                            'content': '',
+                            'vector_distance': distance,
+                            'fetch_error': str(e),
+                        })
+            if rag_chunks:
+                turn.rag_context = rag_chunks
+                turn.save(update_fields=['rag_context'])
 
         tool_calls = turn_data.get('tool_calls', [])
         for tc_data in tool_calls:

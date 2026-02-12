@@ -54,3 +54,17 @@ class ElevenLabsClient:
         )
         resp.raise_for_status()
         return resp.content
+
+    def get_kb_chunk(self, documentation_id: str, chunk_id: str) -> dict:
+        """Fetch a single knowledge base chunk's content.
+
+        Returns dict with 'content' key containing the chunk text.
+        Endpoint: GET /v1/convai/knowledge-base/{doc_id}/chunk/{chunk_id}
+        """
+        resp = requests.get(
+            f"{self.BASE_URL}/knowledge-base/{documentation_id}/chunk/{chunk_id}",
+            headers=self.headers,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()

@@ -19,7 +19,8 @@
                 </p>
             </div>
             <div class="flex space-x-2">
-                <form method="post" action="{% url 'agent_sync' agent.pk %}" class="inline">
+                <form method="post" action="{% url 'agent_sync' agent.pk %}" class="inline"
+                      onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='Syncing...';b.classList.add('opacity-75');">
                     {% csrf_token %}
                     <button type="submit" class="px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700">Sync Now</button>
                 </form>

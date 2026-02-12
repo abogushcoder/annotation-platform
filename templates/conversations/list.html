@@ -18,14 +18,25 @@
     </div>
 </div>
 
-<div class="flex space-x-2 mb-4">
-    <a href="?status=assigned" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'assigned' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Assigned</a>
-    <a href="?status=in_progress" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'in_progress' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">In Progress</a>
-    <a href="?status=completed" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'completed' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Completed</a>
-    <a href="?status=all" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'all' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">All</a>
+<div class="mb-4">
+    <input type="text" name="q" value="{{ search_query }}"
+           placeholder="Search conversations..."
+           class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+           hx-get="{% url 'annotator_dashboard' %}"
+           hx-trigger="keyup changed delay:300ms"
+           hx-target="#conversation-list"
+           hx-include="[name='status']"
+           hx-push-url="true">
 </div>
 
-<div class="space-y-3">
+<div class="flex space-x-2 mb-4">
+    <a href="?status=assigned{% if search_query %}&q={{ search_query }}{% endif %}" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'assigned' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Assigned</a>
+    <a href="?status=in_progress{% if search_query %}&q={{ search_query }}{% endif %}" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'in_progress' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">In Progress</a>
+    <a href="?status=completed{% if search_query %}&q={{ search_query }}{% endif %}" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'completed' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">Completed</a>
+    <a href="?status=all{% if search_query %}&q={{ search_query }}{% endif %}" class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'all' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">All</a>
+</div>
+
+<div class="space-y-3" id="conversation-list">
     {% for conv in conversations %}
     <div class="bg-white rounded-lg shadow-sm border p-4 flex items-center justify-between">
         <div>
@@ -40,6 +51,9 @@
                 </span>
                 <span class="font-medium text-gray-900">Conv #{{ conv.elevenlabs_id|truncatechars:10 }}</span>
                 <span class="text-gray-500 text-sm">{{ conv.agent.label }}</span>
+                {% for tag in conv.tags.all %}
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium text-white" style="background-color: {{ tag.color }}">{{ tag.name }}</span>
+                {% endfor %}
             </div>
             <div class="text-sm text-gray-500 mt-1">
                 {% if conv.call_duration_secs %}Duration: {{ conv.call_duration_secs }}s{% endif %}

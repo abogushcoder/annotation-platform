@@ -13,22 +13,47 @@
     </form>
 </div>
 
+{% if active_prompt %}
+<div class="rounded-md bg-indigo-50 border border-indigo-200 p-3 mb-4 flex items-center justify-between">
+    <div>
+        <span class="text-sm text-indigo-800 font-medium">Active system prompt:</span>
+        <span class="text-sm text-indigo-600 ml-1">{{ active_prompt.name }}</span>
+    </div>
+    <a href="{% url 'prompt_management' %}" class="text-xs text-indigo-600 hover:text-indigo-800 underline">Manage Prompts</a>
+</div>
+{% else %}
+<div class="rounded-md bg-yellow-50 border border-yellow-200 p-3 mb-4">
+    <span class="text-sm text-yellow-800 font-medium">No active system prompt.</span>
+    <span class="text-sm text-yellow-600 ml-1">Set one on the <a href="{% url 'prompt_management' %}" class="underline">Prompts page</a> before exporting.</span>
+</div>
+{% endif %}
+
+<div class="mb-4">
+    <input type="text" name="q" value="{{ search_query }}"
+           placeholder="Search conversations..."
+           class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+           hx-get="{% url 'assign_conversations' %}"
+           hx-trigger="keyup changed delay:300ms"
+           hx-target="#assign-list"
+           hx-push-url="true">
+</div>
+
 <!-- Filter bar -->
 <div class="flex flex-wrap items-center gap-3 mb-4">
     <div class="flex flex-wrap gap-2">
-        <a href="?status=unassigned{% if agent_filter %}&agent={{ agent_filter }}{% endif %}"
+        <a href="?status=unassigned{% if agent_filter %}&agent={{ agent_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
            class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'unassigned' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
             Unassigned ({{ unassigned_count }})
         </a>
-        <a href="?status=assigned{% if agent_filter %}&agent={{ agent_filter }}{% endif %}"
+        <a href="?status=assigned{% if agent_filter %}&agent={{ agent_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
            class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'assigned' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
             Assigned ({{ assigned_count }})
         </a>
-        <a href="?status=in_progress{% if agent_filter %}&agent={{ agent_filter }}{% endif %}"
+        <a href="?status=in_progress{% if agent_filter %}&agent={{ agent_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
            class="px-3 py-1.5 rounded text-sm font-medium {% if status_filter == 'in_progress' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
             In Progress ({{ in_progress_count }})
         </a>
-        <a href="?{% if agent_filter %}agent={{ agent_filter }}{% endif %}"
+        <a href="?{% if agent_filter %}agent={{ agent_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
            class="px-3 py-1.5 rounded text-sm font-medium {% if not status_filter %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-700 hover:bg-gray-200{% endif %}">
             All
         </a>
@@ -49,13 +74,13 @@
         <select name="assignee" class="rounded-md border border-gray-300 px-3 py-2 text-sm">
             <option value="">Select Annotator</option>
             {% for ann in annotators %}
-            <option value="{{ ann.pk }}">{{ ann.get_full_name|default:ann.username }}</option>
+            <option value="{{ ann.pk }}">{{ ann.get_full_name|default:ann.username }}{% if ann.role == 'admin' %} (admin){% endif %}</option>
             {% endfor %}
         </select>
         <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">Assign Selected</button>
     </div>
 
-    <div class="bg-white rounded-lg shadow-sm border divide-y">
+    <div class="bg-white rounded-lg shadow-sm border divide-y" id="assign-list">
         {% for conv in conversations %}
         <div class="p-3 flex items-center space-x-3">
             <input type="checkbox" name="conversation_ids" value="{{ conv.pk }}" class="rounded border-gray-300">
