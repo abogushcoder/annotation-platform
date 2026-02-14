@@ -41,7 +41,26 @@
     <a href="{% url 'agent_list' %}" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">Sync Conversations</a>
     <a href="{% url 'assign_conversations' %}" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">Assign Batch</a>
     <a href="{% url 'export_page' %}" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700">Export JSONL</a>
+    {% if total > 0 %}
+    <button onclick="document.getElementById('reset-modal').classList.remove('hidden')" class="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700">Reset Conversations</button>
+    {% endif %}
 </div>
+
+{% if total > 0 %}
+<div id="reset-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-2">Reset All Conversations</h3>
+        <p class="text-sm text-gray-600 mb-4">This will permanently delete all <strong>{{ total }}</strong> conversations, their turns, and tool calls. Agents and team members will be kept. This action cannot be undone.</p>
+        <div class="flex justify-end space-x-3">
+            <button onclick="document.getElementById('reset-modal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded hover:bg-gray-200">Cancel</button>
+            <form method="post" action="{% url 'reset_conversations' %}">
+                {% csrf_token %}
+                <button type="submit" class="px-4 py-2 text-sm text-white bg-red-600 rounded hover:bg-red-700">Delete All Conversations</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% if review_queue %}
 <h2 class="text-lg font-semibold text-gray-900 mb-3">Review Queue ({{ review_queue|length }} awaiting)</h2>

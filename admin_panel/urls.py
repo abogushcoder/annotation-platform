@@ -26,4 +26,5 @@ urlpatterns = [
     path('prompts/add/', views.prompt_add, name='prompt_add'),
     path('prompts/<int:pk>/edit/', views.prompt_edit, name='prompt_edit'),
     path('prompts/<int:pk>/activate/', views.prompt_activate, name='prompt_activate'),
+    path('reset-conversations/', views.reset_conversations, name='reset_conversations'),
 ]

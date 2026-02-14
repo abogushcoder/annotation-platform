@@ -645,3 +645,15 @@ def prompt_activate(request, pk):
         prompt.save()
         messages.success(request, f'"{prompt.name}" is now active.')
     return redirect('prompt_management')
+
+
+# ---- Reset Conversations ----
+
+@admin_required
+def reset_conversations(request):
+    if request.method == 'POST':
+        count = Conversation.objects.count()
+        Conversation.objects.all().delete()
+        Agent.objects.update(last_synced_at=None)
+        messages.success(request, f'Deleted {count} conversations. Agents can now be re-synced.')
+    return redirect('admin_dashboard')
