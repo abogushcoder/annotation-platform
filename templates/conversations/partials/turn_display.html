@@ -48,15 +48,19 @@
             </summary>
             <div class="mt-1 space-y-1">
                 {% for chunk in turn.rag_context %}
-                <div class="text-xs text-gray-500 bg-purple-50 border border-purple-100 rounded p-2">
-                    {{ chunk.content|truncatechars:200 }}
-                    {% if chunk.vector_distance %}
-                    <span class="text-purple-400 ml-1">(d={{ chunk.vector_distance|floatformat:3 }})</span>
-                    {% endif %}
-                    {% if chunk.fetch_error %}
-                    <span class="text-red-400 ml-1">(fetch failed)</span>
-                    {% endif %}
-                </div>
+                <details class="text-xs bg-purple-50 border border-purple-100 rounded group/chunk">
+                    <summary class="flex items-center gap-1 text-gray-500 cursor-pointer hover:text-gray-700 p-2 select-none">
+                        <span class="transition-transform group-open/chunk:rotate-90 text-[10px]">&#9654;</span>
+                        <span class="truncate">{{ chunk.content|truncatechars:120 }}</span>
+                        {% if chunk.vector_distance %}
+                        <span class="text-purple-400 ml-1 shrink-0">(d={{ chunk.vector_distance|floatformat:3 }})</span>
+                        {% endif %}
+                        {% if chunk.fetch_error %}
+                        <span class="text-red-400 ml-1 shrink-0">(fetch failed)</span>
+                        {% endif %}
+                    </summary>
+                    <div class="px-2 pb-2 text-gray-600 whitespace-pre-wrap border-t border-purple-100 pt-2">{{ chunk.content }}</div>
+                </details>
                 {% endfor %}
             </div>
         </details>

@@ -1,0 +1,34 @@
+{% comment %}Display card for add_item tool call.{% endcomment %}
+<div class="text-xs space-y-2">
+    <div class="flex items-center gap-2 flex-wrap">
+        {% if d.order_id %}
+        <span class="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-mono">Order #{{ d.order_id }}</span>
+        {% endif %}
+        {% if d.item_name %}
+        <span class="inline-flex items-center bg-green-50 text-green-700 px-1.5 py-0.5 rounded">
+            + {{ d.item_name }}{% if d.quantity and d.quantity != 1 %} <span class="ml-1 text-green-500">x{{ d.quantity }}</span>{% endif %}
+        </span>
+        {% endif %}
+    </div>
+
+    {% if d.modifiers %}
+    <div class="text-gray-400 text-[10px]">
+        &nbsp;&nbsp;&rdsh; {{ d.modifiers|join:", " }}
+    </div>
+    {% endif %}
+
+    {% if d.special_instructions %}
+    <div class="text-amber-600 text-[10px] italic">&nbsp;&nbsp;{{ d.special_instructions }}</div>
+    {% endif %}
+
+    {% if tc.response_body %}
+    <div class="bg-gray-50 rounded px-2 py-1.5 flex items-center flex-wrap gap-x-3 gap-y-1 text-gray-600">
+        {% if d.result.new_total %}
+        <span class="text-gray-600">New total: {{ d.result.new_total }}</span>
+        {% endif %}
+        {% if d.result.message %}
+        <span class="text-gray-500">{{ d.result.message }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>

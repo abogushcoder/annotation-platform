@@ -25,6 +25,13 @@ TOOL_FIELD_DEFINITIONS = {
         {'name': 'newItemName', 'label': 'New Item', 'type': 'text'},
         {'name': 'newQuantity', 'label': 'New Quantity', 'type': 'number'},
     ],
+    'add_item': [
+        {'name': 'orderId', 'label': 'Order ID', 'type': 'text'},
+        {'name': 'itemName', 'label': 'Item Name', 'type': 'text'},
+        {'name': 'quantity', 'label': 'Quantity', 'type': 'number'},
+        {'name': 'modifiers', 'label': 'Modifiers (JSON)', 'type': 'json'},
+        {'name': 'specialInstructions', 'label': 'Special Instructions', 'type': 'textarea'},
+    ],
     'check_availability': [
         {'name': 'date', 'label': 'Date', 'type': 'text'},
         {'name': 'time', 'label': 'Time', 'type': 'text'},
@@ -50,14 +57,14 @@ TOOL_FIELD_DEFINITIONS = {
 
 # Tools that have purpose-built card templates
 KNOWN_TOOLS = {
-    'create_order', 'cancel_order', 'remove_item', 'modify_item',
+    'create_order', 'cancel_order', 'remove_item', 'modify_item', 'add_item',
     'check_availability', 'create_reservation', 'end_call',
     'get_past_orders', 'send_menu_link',
 }
 
 # Tools that have purpose-built form templates
 FORM_TOOLS = {
-    'create_order', 'cancel_order', 'remove_item', 'modify_item',
+    'create_order', 'cancel_order', 'remove_item', 'modify_item', 'add_item',
     'check_availability', 'create_reservation',
 }
 
@@ -269,6 +276,26 @@ def get_tool_display_data(tc):
         data['item_name'] = args.get('itemName', '')
         data['result'] = {
             'success': resp.get('success', False),
+            'message': resp.get('message', ''),
+        }
+
+    elif tool == 'add_item':
+        data['order_id'] = args.get('orderId', '')
+        data['item_name'] = args.get('itemName', '')
+        data['quantity'] = args.get('quantity', 1)
+        raw_mods = args.get('modifiers', [])
+        modifiers = []
+        if isinstance(raw_mods, list):
+            for m in raw_mods:
+                if isinstance(m, dict):
+                    modifiers.append(m.get('name', str(m)))
+                elif isinstance(m, str):
+                    modifiers.append(m)
+        data['modifiers'] = modifiers
+        data['special_instructions'] = args.get('specialInstructions', '')
+        data['result'] = {
+            'success': resp.get('success', False),
+            'new_total': _format_money(resp.get('newTotal', resp.get('total'))),
             'message': resp.get('message', ''),
         }
 
