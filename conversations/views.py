@@ -46,7 +46,7 @@ def conversation_editor(request, pk):
 
     turns = conversation.turns.prefetch_related('tool_calls').all()
 
-    if conversation.status == 'assigned' and conversation.assigned_to == request.user:
+    if conversation.status == 'assigned' and (conversation.assigned_to == request.user or request.user.is_admin()):
         conversation.status = 'in_progress'
         conversation.save()
 

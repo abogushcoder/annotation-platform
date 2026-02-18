@@ -34,6 +34,7 @@
                     <div class="hidden lg:flex items-center space-x-6" id="nav-links-desktop">
                         {% if user.is_admin %}
                         <a href="/admin-panel/" class="text-indigo-100 hover:text-white text-sm">Dashboard</a>
+                        <a href="/conversations/" class="text-indigo-100 hover:text-white text-sm">My Work</a>
                         <a href="/admin-panel/agents/" class="text-indigo-100 hover:text-white text-sm">Agents</a>
                         <a href="/admin-panel/assign/" class="text-indigo-100 hover:text-white text-sm">Assign</a>
                         <a href="/admin-panel/review/" class="text-indigo-100 hover:text-white text-sm">Review</a>
@@ -60,6 +61,7 @@
             <div class="hidden lg:hidden pb-3 space-y-1" id="nav-links">
                 {% if user.is_admin %}
                 <a href="/admin-panel/" class="block text-indigo-100 hover:text-white text-sm py-1">Dashboard</a>
+                <a href="/conversations/" class="block text-indigo-100 hover:text-white text-sm py-1">My Work</a>
                 <a href="/admin-panel/agents/" class="block text-indigo-100 hover:text-white text-sm py-1">Agents</a>
                 <a href="/admin-panel/assign/" class="block text-indigo-100 hover:text-white text-sm py-1">Assign</a>
                 <a href="/admin-panel/review/" class="block text-indigo-100 hover:text-white text-sm py-1">Review</a>

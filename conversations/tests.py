@@ -1201,7 +1201,7 @@ class ViewTests(TestCase):
         conv.refresh_from_db()
         self.assertEqual(conv.status, 'in_progress')
 
-    def test_conversation_editor_no_auto_transition_for_admin(self):
+    def test_conversation_editor_no_auto_transition_for_admin_viewing_others(self):
         self.client.login(username='admin', password='admin')
         conv = Conversation.objects.create(
             elevenlabs_id='conv_admin_view', agent=self.agent,
@@ -1211,8 +1211,21 @@ class ViewTests(TestCase):
         response = self.client.get(f'/conversations/{conv.pk}/')
         self.assertEqual(response.status_code, 200)
         conv.refresh_from_db()
-        # Admin viewing doesn't auto-transition since they're not the assignee
-        self.assertEqual(conv.status, 'assigned')
+        # Admin viewing someone else's assigned conversation transitions it
+        self.assertEqual(conv.status, 'in_progress')
+
+    def test_conversation_editor_auto_transition_for_admin_assignee(self):
+        self.client.login(username='admin', password='admin')
+        conv = Conversation.objects.create(
+            elevenlabs_id='conv_admin_own', agent=self.agent,
+            assigned_to=self.admin, status='assigned'
+        )
+        Turn.objects.create(conversation=conv, position=0, role='agent', original_text='Hi')
+        response = self.client.get(f'/conversations/{conv.pk}/')
+        self.assertEqual(response.status_code, 200)
+        conv.refresh_from_db()
+        # Admin assigned to this conversation should auto-transition
+        self.assertEqual(conv.status, 'in_progress')
 
     def test_conversation_editor_permission_denied(self):
         self.client.login(username='annotator', password='annotator')
@@ -1503,7 +1516,8 @@ class ViewTests(TestCase):
         assigned = Conversation.objects.filter(status='assigned').count()
         self.assertEqual(assigned, 4)
 
-    def test_auto_distribute_no_annotators(self):
+    def test_auto_distribute_no_annotators_or_admins(self):
+        """When all annotators are inactive, admin still gets conversations."""
         self.client.login(username='admin', password='admin')
         User.objects.filter(role='annotator').update(is_active=False)
         Conversation.objects.create(
@@ -1511,13 +1525,17 @@ class ViewTests(TestCase):
         )
         response = self.client.post('/admin-panel/assign/auto/')
         self.assertEqual(response.status_code, 302)
-        # Nothing should be assigned
-        unassigned = Conversation.objects.filter(status='unassigned').count()
-        self.assertEqual(unassigned, 1)
+        # Admin is still active, so it gets the conversation
+        assigned = Conversation.objects.filter(status='assigned').count()
+        self.assertEqual(assigned, 1)
+        self.assertEqual(
+            Conversation.objects.filter(assigned_to=self.admin, status='assigned').count(), 1
+        )
 
     def test_auto_distribute_even(self):
         self.client.login(username='admin', password='admin')
         ann2 = User.objects.create_user(username='ann2', password='p', role='annotator')
+        # admin + annotator + ann2 = 3 users, 6 conversations -> 2 each
         for i in range(6):
             Conversation.objects.create(
                 elevenlabs_id=f'conv_even_{i}', agent=self.agent, status='unassigned'
@@ -1526,8 +1544,10 @@ class ViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         ann1_count = Conversation.objects.filter(assigned_to=self.annotator).count()
         ann2_count = Conversation.objects.filter(assigned_to=ann2).count()
-        self.assertEqual(ann1_count, 3)
-        self.assertEqual(ann2_count, 3)
+        admin_count = Conversation.objects.filter(assigned_to=self.admin).count()
+        self.assertEqual(ann1_count, 2)
+        self.assertEqual(ann2_count, 2)
+        self.assertEqual(admin_count, 2)
 
     # ---- Team ----
 

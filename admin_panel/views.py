@@ -37,8 +37,8 @@ def admin_dashboard(request):
     approved = Conversation.objects.filter(status='approved').count()
     flagged = Conversation.objects.filter(status='flagged').count()
 
-    # Per-annotator stats
-    annotators = User.objects.filter(role='annotator', is_active=True)
+    # Per-user stats (annotators + admins)
+    annotators = User.objects.filter(role__in=['annotator', 'admin'], is_active=True)
     team_stats = []
     for ann in annotators:
         ann_total = Conversation.objects.filter(assigned_to=ann).count()
@@ -254,9 +254,9 @@ def assign_conversations(request):
 @admin_required
 def auto_distribute(request):
     if request.method == 'POST':
-        annotators = list(User.objects.filter(role='annotator', is_active=True))
+        annotators = list(User.objects.filter(role__in=['annotator', 'admin'], is_active=True))
         if not annotators:
-            messages.error(request, 'No active annotators.')
+            messages.error(request, 'No active annotators or admins.')
             return redirect('assign_conversations')
 
         unassigned = list(Conversation.objects.filter(status='unassigned'))
@@ -482,9 +482,9 @@ def export_download(request):
 def analytics_page(request):
     from django.db.models import Count, Q, Avg
 
-    annotators = User.objects.filter(role='annotator', is_active=True)
+    annotators = User.objects.filter(role__in=['annotator', 'admin'], is_active=True)
 
-    # Per-annotator metrics
+    # Per-user metrics (annotators + admins)
     annotator_metrics = []
     for ann in annotators:
         total_assigned = Conversation.objects.filter(assigned_to=ann).count()
